@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}누락검체{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h1 class="h4 fw-bold mb-0"><i class="bi bi-exclamation-triangle text-danger me-2"></i>누락검체 목록</h1>
+    <div class="text-secondary" style="font-size:.82rem">도착처리되지 않은 접수 검체 · 3초 자동 갱신</div>
+  </div>
+  <div class="d-flex gap-2">
+    <input id="searchInput" class="form-control" style="width:220px" placeholder="접수번호 / 환자명 검색">
+    <a class="btn btn-primary" href="/find"><i class="bi bi-search me-1"></i>검체 찾기</a>
+  </div>
+</div>
+
+<div class="page-panel">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="d-flex align-items-center gap-3">
+      <span class="fw-bold">전체 <span id="totalCount" class="text-danger">0</span>건</span>
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" role="switch" id="finalOnly">
+        <label class="form-check-label" for="finalOnly" style="font-size:.88rem">최종 리스트만</label>
+      </div>
+    </div>
+    <span class="badge text-bg-secondary"><i class="bi bi-arrow-clockwise me-1"></i>자동 갱신</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th style="width:40px">#</th>
+          <th>접수번호</th>
+          <th>환자명</th>
+          <th>검체명</th>
+          <th class="text-center">최종 리스트</th>
+          <th class="text-center">검체 찾기</th>
+        </tr>
+      </thead>
+      <tbody id="missingRows">
+        <tr><td colspan="6" class="text-center text-secondary py-4">불러오는 중…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="emptyMsg" class="d-none text-center py-5">
+    <i class="bi bi-check-circle text-success" style="font-size:2.5rem"></i>
+    <div class="mt-2 fw-semibold">누락검체가 없습니다</div>
+    <div class="text-secondary" style="font-size:.85rem">모든 접수 검체가 도착처리 되었습니다.</div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let allRows = [];
+
+async function loadMissing() {
+  try {
+    allRows = await fetchJson("/api/missing");
+    renderRows();
+  } catch (e) {
+    document.getElementById("missingRows").innerHTML =
+      `<tr><td colspan="6" class="text-center text-danger py-3">${escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+function renderRows() {
+  const keyword   = document.getElementById("searchInput").value.trim().toLowerCase();
+  const finalOnly = document.getElementById("finalOnly").checked;
+
+  let rows = allRows;
+  if (finalOnly) rows = rows.filter(r => r.is_in_final_batch);
+  if (keyword)   rows = rows.filter(r =>
+    r.accession_no.toLowerCase().includes(keyword) ||
+    (r.patient_name || "").toLowerCase().includes(keyword)
+  );
+
+  document.getElementById("totalCount").textContent = rows.length;
+  document.getElementById("emptyMsg").classList.toggle("d-none", rows.length !== 0 || allRows.length === 0);
+
+  if (!rows.length) {
+    document.getElementById("missingRows").innerHTML =
+      `<tr><td colspan="6" class="text-center text-secondary py-4">
+        ${allRows.length ? "검색 결과가 없습니다." : "누락검체가 없습니다."}
+      </td></tr>`;
+    return;
+  }
+
+  document.getElementById("missingRows").innerHTML = rows.map((r, i) => `
+    <tr>
+      <td class="text-secondary" style="font-size:.8rem">${i + 1}</td>
+      <td>
+        <a class="fw-semibold font-monospace text-decoration-none"
+           href="/find"
+           onclick="localStorage.setItem('findAccessionNo','${escapeHtml(r.accession_no)}')"
+        >${escapeHtml(r.accession_no)}</a>
+      </td>
+      <td>${escapeHtml(r.patient_name || "-")}</td>
+      <td>${escapeHtml(r.specimen_name || "-")}</td>
+      <td class="text-center">
+        ${r.is_in_final_batch
+          ? '<span class="badge text-bg-danger"><i class="bi bi-flag-fill me-1"></i>최종 포함</span>'
+          : '<span class="badge text-bg-light text-dark">미포함</span>'}
+      </td>
+      <td class="text-center">
+        <a class="btn btn-sm btn-outline-primary" href="/find"
+           onclick="localStorage.setItem('findAccessionNo','${escapeHtml(r.accession_no)}')">
+          <i class="bi bi-search"></i>
+        </a>
+      </td>
+    </tr>`).join("");
+}
+
+document.getElementById("searchInput").addEventListener("input", renderRows);
+document.getElementById("finalOnly").addEventListener("change", renderRows);
+
+loadMissing();
+setInterval(loadMissing, 3000);
+</script>
+{% endblock %}

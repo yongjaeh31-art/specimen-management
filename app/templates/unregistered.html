@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}미접수검체{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h1 class="h4 fw-bold mb-0"><i class="bi bi-question-circle text-warning me-2"></i>미접수검체 목록</h1>
+    <div class="text-secondary" style="font-size:.82rem">접수리스트에 없는 스캔 기록 · 3초 자동 갱신</div>
+  </div>
+  <input id="searchInput" class="form-control" style="width:220px" placeholder="접수번호 검색">
+</div>
+
+<div class="page-panel">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <span class="fw-bold">전체 <span id="totalCount" class="text-warning">0</span>건</span>
+    <span class="badge text-bg-secondary"><i class="bi bi-arrow-clockwise me-1"></i>자동 갱신</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th style="width:40px">#</th>
+          <th>스캔시간</th>
+          <th>접수번호</th>
+          <th>카테고리</th>
+          <th>확인자</th>
+          <th>확인 PC</th>
+          <th class="text-center">구분</th>
+          <th class="text-center">상세</th>
+        </tr>
+      </thead>
+      <tbody id="unregisteredRows">
+        <tr><td colspan="8" class="text-center text-secondary py-4">불러오는 중…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="emptyMsg" class="d-none text-center py-5">
+    <i class="bi bi-check-circle text-success" style="font-size:2.5rem"></i>
+    <div class="mt-2 fw-semibold">미접수검체가 없습니다</div>
+    <div class="text-secondary" style="font-size:.85rem">모든 스캔 기록이 접수리스트와 연결되어 있습니다.</div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let allRows = [];
+
+async function loadUnregistered() {
+  try {
+    allRows = await fetchJson("/api/unregistered");
+    renderRows();
+  } catch (e) {
+    document.getElementById("unregisteredRows").innerHTML =
+      `<tr><td colspan="8" class="text-center text-danger py-3">${escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+function renderRows() {
+  const keyword = document.getElementById("searchInput").value.trim().toLowerCase();
+  const rows = keyword
+    ? allRows.filter(r => r.accession_no.toLowerCase().includes(keyword))
+    : allRows;
+
+  document.getElementById("totalCount").textContent = rows.length;
+  document.getElementById("emptyMsg").classList.toggle("d-none", rows.length !== 0 || allRows.length === 0);
+
+  if (!rows.length) {
+    document.getElementById("unregisteredRows").innerHTML =
+      `<tr><td colspan="8" class="text-center text-secondary py-4">
+        ${allRows.length ? "검색 결과가 없습니다." : "미접수검체가 없습니다."}
+      </td></tr>`;
+    return;
+  }
+
+  document.getElementById("unregisteredRows").innerHTML = rows.map((r, i) => {
+    const isPrearrival = r.status === "선도착";
+    const badgeColor   = isPrearrival ? "warning text-dark" : "danger";
+    const badgeIcon    = isPrearrival ? "bi-hourglass-split" : "bi-x-circle";
+    return `
+      <tr>
+        <td class="text-secondary" style="font-size:.8rem">${i + 1}</td>
+        <td style="font-size:.82rem;white-space:nowrap">${formatDate(r.arrived_at)}</td>
+        <td>
+          <a class="fw-semibold font-monospace text-decoration-none"
+             href="/find"
+             onclick="localStorage.setItem('findAccessionNo','${escapeHtml(r.accession_no)}')"
+          >${escapeHtml(r.accession_no)}</a>
+        </td>
+        <td><span class="badge text-bg-light text-dark border">${escapeHtml(r.specimen_category)}</span></td>
+        <td>${escapeHtml(r.arrived_by || "-")}</td>
+        <td class="text-secondary" style="font-size:.82rem">${escapeHtml(r.workstation_name || "-")}</td>
+        <td class="text-center">
+          <span class="badge text-bg-${badgeColor}">
+            <i class="bi ${badgeIcon} me-1"></i>${escapeHtml(r.status)}
+          </span>
+        </td>
+        <td class="text-center">
+          <a class="btn btn-sm btn-outline-primary" href="/find"
+             onclick="localStorage.setItem('findAccessionNo','${escapeHtml(r.accession_no)}')">
+            <i class="bi bi-search"></i>
+          </a>
+        </td>
+      </tr>`;
+  }).join("");
+}
+
+document.getElementById("searchInput").addEventListener("input", renderRows);
+loadUnregistered();
+setInterval(loadUnregistered, 3000);
+</script>
+{% endblock %}

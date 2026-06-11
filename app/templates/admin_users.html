@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}사용자 승인{% endblock %}
+{% block content %}
+<div class="row g-3 justify-content-center">
+  <div class="col-12 col-xl-8">
+
+    <!-- 관리자 인증 -->
+    <div class="page-panel mb-3">
+      <div class="panel-header">
+        <div class="panel-icon"><i class="bi bi-shield-lock"></i></div>
+        <h1>사용자 승인 관리</h1>
+      </div>
+      <div class="row g-2 align-items-end">
+        <div class="col-sm-8">
+          <label class="form-label fw-semibold">관리자 비밀번호</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-key"></i></span>
+            <input id="adminPassword" class="form-control" type="password"
+                   placeholder="관리자 비밀번호 입력 후 조회">
+          </div>
+        </div>
+        <div class="col-sm-4">
+          <button id="loadPending" class="btn btn-primary w-100" type="button">
+            <i class="bi bi-arrow-clockwise me-1"></i>승인 대기 조회
+          </button>
+        </div>
+      </div>
+      <div class="form-text mt-2">
+        <i class="bi bi-info-circle me-1"></i>
+        기본 관리자 비밀번호는 <code>admin1234</code>입니다.
+        운영 전 <code>.env</code>에서 <code>ADMIN_PASSWORD</code>를 변경하세요.
+      </div>
+    </div>
+
+    <!-- 대기 사용자 목록 -->
+    <div class="page-panel">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="fw-bold">
+          승인 대기 <span id="pendingCount" class="text-warning">-</span>명
+        </div>
+        <span id="adminMessage" class="small text-secondary"></span>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>요청시간</th>
+              <th>아이디</th>
+              <th>이름</th>
+              <th class="text-center">상태</th>
+              <th class="text-center" style="width:100px">승인</th>
+            </tr>
+          </thead>
+          <tbody id="pendingRows">
+            <tr>
+              <td colspan="5" class="text-center text-secondary py-5">
+                <i class="bi bi-shield-lock me-2"></i>관리자 비밀번호를 입력하고 조회하세요.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadPendingUsers() {
+  const pw  = document.getElementById("adminPassword").value;
+  const btn = document.getElementById("loadPending");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>조회 중…';
+  try {
+    const rows = await postJson("/api/auth/pending", { admin_password: pw });
+    document.getElementById("pendingCount").textContent = rows.length;
+    document.getElementById("adminMessage").textContent  = "";
+
+    if (!rows.length) {
+      document.getElementById("pendingRows").innerHTML =
+        `<tr><td colspan="5" class="text-center text-secondary py-5">
+          <i class="bi bi-check-circle text-success me-2"></i>승인 대기 사용자가 없습니다.
+        </td></tr>`;
+      return;
+    }
+
+    document.getElementById("pendingRows").innerHTML = rows.map(r => `
+      <tr id="row-${r.id}">
+        <td style="font-size:.82rem">${formatDate(r.created_at)}</td>
+        <td class="fw-semibold font-monospace">${escapeHtml(r.username)}</td>
+        <td>${escapeHtml(r.display_name)}</td>
+        <td class="text-center">
+          <span class="badge text-bg-warning">
+            <i class="bi bi-hourglass-split me-1"></i>승인 대기
+          </span>
+        </td>
+        <td class="text-center">
+          <button class="btn btn-sm btn-success" onclick="approveUser(${r.id})">
+            <i class="bi bi-check-lg me-1"></i>승인
+          </button>
+        </td>
+      </tr>`).join("");
+  } catch (err) {
+    document.getElementById("adminMessage").innerHTML =
+      `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${escapeHtml(err.message)}</span>`;
+    showToast("오류", err.message, "danger");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>승인 대기 조회';
+  }
+}
+
+async function approveUser(userId) {
+  const pw  = document.getElementById("adminPassword").value;
+  const btn = document.querySelector(`#row-${userId} button`);
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>'; }
+  try {
+    await postJson("/api/auth/approve", { user_id: userId, admin_password: pw });
+    showToast("승인 완료", "사용자를 승인했습니다.", "success");
+    document.getElementById("adminMessage").innerHTML =
+      `<span class="text-success"><i class="bi bi-check-circle me-1"></i>승인했습니다.</span>`;
+    await loadPendingUsers();
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>승인'; }
+    document.getElementById("adminMessage").innerHTML =
+      `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>${escapeHtml(err.message)}</span>`;
+    showToast("오류", err.message, "danger");
+  }
+}
+
+document.getElementById("loadPending").addEventListener("click", loadPendingUsers);
+document.getElementById("adminPassword").addEventListener("keydown", e => {
+  if (e.key === "Enter") loadPendingUsers();
+});
+</script>
+{% endblock %}

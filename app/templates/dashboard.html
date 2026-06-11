@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}대시보드{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h1 class="h4 fw-bold mb-0">대시보드</h1>
+    <div class="text-secondary" style="font-size:.82rem">검체 처리 현황 · 3초 자동 갱신</div>
+  </div>
+  <button class="btn btn-sm btn-outline-secondary" onclick="loadSummary()">
+    <i class="bi bi-arrow-clockwise me-1"></i>새로고침
+  </button>
+</div>
+
+<div class="row g-3 mb-4" id="summaryCards"></div>
+
+<div class="row g-3">
+  <div class="col-12 col-xl-6">
+    <div class="page-panel">
+      <div class="panel-header">
+        <div class="panel-icon"><i class="bi bi-clock-history"></i></div>
+        <h2>최근 업로드 현황</h2>
+      </div>
+      <div id="batchStatus" class="text-secondary" style="font-size:.88rem">불러오는 중…</div>
+    </div>
+  </div>
+  <div class="col-12 col-xl-6">
+    <div class="page-panel">
+      <div class="panel-header">
+        <div class="panel-icon"><i class="bi bi-lightning-charge"></i></div>
+        <h2>빠른 이동</h2>
+      </div>
+      <div class="row g-2">
+        {% set shortcuts = [
+          ('/scan',   'bi-upc-scan',          'btn-primary',   '검체 스캔'),
+          ('/upload', 'bi-upload',             'btn-outline-primary', '접수리스트 업로드'),
+          ('/micro',  'bi-grid-3x3-gap',       'btn-outline-success', '학부별 소분류'),
+          ('/find',   'bi-search',             'btn-outline-secondary','검체 찾기'),
+          ('/missing','bi-exclamation-triangle','btn-outline-danger',  '누락검체'),
+          ('/unregistered','bi-question-circle','btn-outline-warning', '미접수검체'),
+        ] %}
+        {% for url, icon, cls, label in shortcuts %}
+        <div class="col-6">
+          <a href="{{ url }}" class="btn {{ cls }} w-100 d-flex align-items-center gap-2">
+            <i class="bi {{ icon }}"></i>{{ label }}
+          </a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const CARD_META = [
+  { key: "total_orders",          label: "총 접수",          icon: "bi-file-earmark-text", color: "primary"   },
+  { key: "arrived_accessions",    label: "도착 검체",         icon: "bi-check-circle",       color: "success"   },
+  { key: "missing_count",         label: "누락 검체",         icon: "bi-exclamation-triangle",color: "danger"    },
+  { key: "unregistered_count",    label: "미접수 검체",       icon: "bi-question-circle",    color: "warning"   },
+  { key: "micro_assignment_count",label: "미생물 Hole 발급",  icon: "bi-virus2",             color: "info"      },
+  { key: "has_final_batch",       label: "최종 업로드",       icon: "bi-flag",               color: null        },
+];
+
+async function loadSummary() {
+  try {
+    const data = await fetchJson("/api/dashboard/summary");
+
+    document.getElementById("summaryCards").innerHTML = CARD_META.map(meta => {
+      let raw = data[meta.key];
+      let val, color;
+      if (meta.key === "has_final_batch") {
+        val   = raw ? "완료" : "대기";
+        color = raw ? "success" : "secondary";
+      } else {
+        val   = raw;
+        color = meta.color;
+      }
+      return `
+        <div class="col-6 col-xl-4">
+          <div class="summary-card border-${color}">
+            <div class="summary-card-icon"><i class="bi ${meta.icon}"></i></div>
+            <div class="summary-body">
+              <div class="summary-label">${meta.label}</div>
+              <div class="summary-value">${val}</div>
+            </div>
+          </div>
+        </div>`;
+    }).join("");
+
+    const batchEl = document.getElementById("batchStatus");
+    if (data.has_final_batch) {
+      batchEl.innerHTML = `<span class="badge text-bg-success me-2"><i class="bi bi-check-circle me-1"></i>최종 업로드 완료</span>배치 ID: ${data.latest_final_batch_id}`;
+    } else {
+      batchEl.innerHTML = `<span class="badge text-bg-secondary me-2"><i class="bi bi-hourglass me-1"></i>최종 업로드 대기</span>아직 최종 업로드가 없습니다.`;
+    }
+  } catch (e) {
+    document.getElementById("summaryCards").innerHTML = `<div class="col-12"><div class="alert alert-danger">데이터 로드 실패: ${escapeHtml(e.message)}</div></div>`;
+  }
+}
+
+loadSummary();
+setInterval(loadSummary, 3000);
+</script>
+{% endblock %}

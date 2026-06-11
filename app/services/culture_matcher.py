@@ -1,0 +1,93 @@
+def normalize_text(value: str | None) -> str:
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum() or "가" <= ch <= "힣")
+
+
+def infer_culture_for_test(test_name: str, specimen_name: str | None = None) -> str | None:
+    """
+    단일 검사명 + 검체명으로 배양 소분류 타입 결정.
+    매핑:
+      보건증 Salmonella & Shigella culture (아인 포함) → 보건증
+      CRE culture & Sensitivity (MIC)                 → CRE culture
+      VRE culture & Sensitivity (MIC)                 → VRE culture
+      Ordinary culture & Sensitivity (MIC) + Urine    → Urine culture
+      Ordinary culture & Sensitivity (MIC) + Sputum   → Sputum culture
+      Ordinary culture & Sensitivity (MIC) + Tip      → Tip culture
+      Ordinary culture & Sensitivity (MIC) + Rectal/Stool → Stool/Rectal culture
+      Ordinary culture & Sensitivity (MIC) + Bronchial washing → Bronchial washing culture
+      Ordinary culture & Sensitivity (MIC) 기타        → Other culture
+    """
+    n = normalize_text(test_name)
+    sp = normalize_text(specimen_name)
+
+    # 보건증 (아인 포함)
+    if "보건증" in n or ("salmonella" in n and "shigella" in n):
+        return "보건증"
+
+    # CRE / VRE — 검사명에 명시된 경우 검체명 무관
+    if "cre" in n and ("culture" in n or "배양" in n):
+        return "CRE culture"
+    if "vre" in n and ("culture" in n or "배양" in n):
+        return "VRE culture"
+
+    # Ordinary culture & Sensitivity → 검체명으로 세부 분류
+    is_ordinary = "ordinaryculture" in n or ("culture" in n and "sensitivity" in n)
+    has_culture = "culture" in n or "배양" in n
+
+    if is_ordinary or has_culture:
+        if "urine" in sp or "random" in sp or "소변" in sp:
+            return "Urine culture"
+        if "sputum" in sp or "객담" in sp:
+            return "Sputum culture"
+        if "rectalswab" in sp or "stool" in sp or "대변" in sp or "직장" in sp:
+            return "Stool/Rectal culture"
+        if "tip" in sp:
+            return "Tip culture"
+        if "bronchialwash" in sp or "기관지세척" in sp:
+            return "Bronchial washing culture"
+        # 검체명으로 분류 불가 + Ordinary → Other
+        if is_ordinary:
+            return "Other culture"
+
+    return None
+
+
+def infer_micro_culture_types(test_names: list[str], specimen_name: str | None = None) -> list[str]:
+    """검사명 목록 + 검체명으로 가능한 배양 타입 목록 반환 (중복 제거)"""
+    found: list[str] = []
+    seen: set[str] = set()
+    for name in test_names:
+        ct = infer_culture_for_test(name, specimen_name)
+        if ct and ct not in seen:
+            found.append(ct)
+            seen.add(ct)
+
+    # 직접 매핑이 없으면 검사명 전체를 합쳐 fallback 탐색
+    if not found:
+        joined = " ".join(normalize_text(n) for n in test_names)
+        if "urineculture" in joined or ("소변" in joined and "배양" in joined):
+            found.append("Urine culture")
+        elif "sputumculture" in joined or ("객담" in joined and "배양" in joined):
+            found.append("Sputum culture")
+        elif "stoolculture" in joined or "rectalculture" in joined or ("대변" in joined and "배양" in joined):
+            found.append("Stool/Rectal culture")
+        elif "tipculture" in joined:
+            found.append("Tip culture")
+        elif "bronchialwashingculture" in joined or "bronchialwashinculture" in joined:
+            found.append("Bronchial washing culture")
+        elif "culture" in joined or "배양" in joined:
+            found.append("Other culture")
+
+    return found
+
+
+def is_matching_micro_culture(test_names: list[str], specimen_name: str | None, selected_culture_type: str) -> bool:
+    inferred = infer_micro_culture_types(test_names, specimen_name)
+    if selected_culture_type in inferred:
+        return True
+    # Other culture는 미분류 배양검사에 허용
+    if selected_culture_type == "Other culture":
+        return any(
+            "culture" in normalize_text(name) or "배양" in normalize_text(name)
+            for name in test_names
+        )
+    return False

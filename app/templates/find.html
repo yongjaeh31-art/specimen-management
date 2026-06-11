@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}검체 찾기{% endblock %}
+{% block content %}
+<div class="row g-3">
+
+  <!-- 검색 패널 -->
+  <div class="col-12 col-xl-4">
+    <div class="page-panel sticky-top-panel">
+      <div class="panel-header">
+        <div class="panel-icon"><i class="bi bi-search"></i></div>
+        <h1>검체 찾기</h1>
+      </div>
+      <label class="form-label fw-semibold">바코드 스캔 / 수기 입력</label>
+      <input id="findBarcode" class="form-control scan-input" autofocus autocomplete="off"
+             placeholder="스캔 또는 Enter 입력">
+      <div class="form-text mt-2">
+        <i class="bi bi-info-circle me-1"></i>조회 전용입니다. 도착처리나 로그는 남기지 않습니다.
+      </div>
+      <div id="findMessage" class="mt-3"></div>
+
+      <!-- 최근 조회 이력 -->
+      <div class="mt-4">
+        <div class="fw-semibold mb-2" style="font-size:.82rem;color:var(--gray-600)">
+          <i class="bi bi-clock-history me-1"></i>최근 조회
+        </div>
+        <div id="findHistory" class="d-flex flex-column gap-1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 결과 패널 -->
+  <div class="col-12 col-xl-8">
+    <div id="findResult" class="result-empty">
+      <div>
+        <i class="bi bi-search"></i>
+        <div>찾을 검체 바코드를 스캔하거나 입력하세요.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let findTimer = null, findStartedAt = 0, findLastLength = 0;
+const findHistoryLog = [];
+
+function looksLikeFindScanner(input) {
+  return input.value.trim().length >= 6 && Date.now() - findStartedAt <= 700;
+}
+
+async function findSpecimen(input) {
+  const accNo = input.value.trim();
+  if (!accNo) return;
+  input.value = "";
+  document.getElementById("findMessage").innerHTML =
+    `<div class="text-secondary small"><span class="spinner-border spinner-border-sm me-1"></span>조회 중…</div>`;
+  try {
+    const data = await fetchJson(`/api/specimen/find/${encodeURIComponent(accNo)}`);
+    renderFindResult(data);
+    addFindHistory(accNo, data);
+    document.getElementById("findMessage").innerHTML = "";
+  } catch (err) {
+    document.getElementById("findMessage").innerHTML =
+      `<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>${escapeHtml(err.message)}</div>`;
+    showToast("조회 실패", err.message, "danger");
+  } finally {
+    input.focus();
+  }
+}
+
+function renderFindResult(data) {
+  const arrived   = data.arrival_status === "도착";
+  const statusClr = arrived ? "success" : "danger";
+  const patTxt    = `${data.patient_name || "-"}${data.patient_age ? ` / ${data.patient_age}세` : ""}`;
+
+  const deptCards = (data.department_cards || []).map(card => `
+    <div class="col-6 col-md-4">
+      <div class="department-card ${departmentClass(card.department_major)}">
+        <div class="dept-icon"><i class="bi ${departmentIcon(card.department_major)}"></i></div>
+        <div class="dept-body">
+          <div class="department-name">${escapeHtml(card.department_major)}</div>
+          <div class="department-count">${card.count}</div>
+        </div>
+      </div>
+    </div>`).join("");
+
+  const arrivalRows = (data.arrivals || []).map(r => `
+    <tr>
+      <td>${escapeHtml(r.specimen_category)}</td>
+      <td>${formatDate(r.arrived_at)}</td>
+      <td>${escapeHtml(r.arrived_by || "-")}</td>
+      <td>${escapeHtml(r.workstation_name || "-")}</td>
+      <td>
+        ${r.is_prearrival ? '<span class="badge text-bg-warning">선도착</span>' : ""}
+        ${r.is_unregistered ? '<span class="badge text-bg-danger">미접수</span>' : ""}
+        ${!r.is_prearrival && !r.is_unregistered ? '<span class="badge text-bg-success">정상</span>' : ""}
+      </td>
+    </tr>`).join("");
+
+  const holeRows = (data.micro_assignments || []).map(r => `
+    <tr>
+      <td><span class="department-badge dept-micro">${escapeHtml(r.department_major)}</span></td>
+      <td>${escapeHtml(r.culture_type)}</td>
+      <td><span class="location-code-badge">${escapeHtml(r.hole_code)}</span></td>
+      <td class="text-secondary" style="font-size:.8rem">R${String(r.rack_no).padStart(2,"0")} / H${String(r.hole_no).padStart(3,"0")}</td>
+      <td class="text-secondary" style="font-size:.8rem">${formatDate(r.assigned_at)}</td>
+    </tr>`).join("");
+
+  const testRows = (data.tests || []).map(t => `
+    <tr>
+      <td class="text-center"><code class="small">${escapeHtml(t.test_code || "-")}</code></td>
+      <td>${escapeHtml(t.test_name)}</td>
+      <td><span class="department-badge ${departmentClass(t.department_major)}">${escapeHtml(t.department_major)}</span></td>
+      <td class="text-center">${t.aliquot_required  ? '<span class="badge text-bg-danger">분주</span>' : ""}</td>
+      <td class="text-center">${t.transfer_required ? '<span class="badge text-bg-warning text-dark">전달</span>' : ""}</td>
+    </tr>`).join("");
+
+  document.getElementById("findResult").innerHTML = `
+    <div class="page-panel">
+      <!-- 헤더 -->
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+        <div>
+          <div class="text-secondary" style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px">접수번호</div>
+          <div style="font-size:2rem;font-weight:800;letter-spacing:1px;font-family:'Courier New',monospace">${escapeHtml(data.accession_no)}</div>
+          ${data.searched_accession_no !== data.accession_no
+            ? `<div class="text-secondary" style="font-size:.78rem">검색: ${escapeHtml(data.searched_accession_no)}</div>` : ""}
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          <span class="badge fs-6 text-bg-${data.order_found ? "success" : "warning"}">
+            <i class="bi bi-${data.order_found ? "check-circle" : "question-circle"} me-1"></i>${data.order_found ? "접수 있음" : "접수 없음"}
+          </span>
+          <span class="badge fs-6 text-bg-${statusClr}">
+            <i class="bi bi-${arrived ? "check2-all" : "hourglass"} me-1"></i>${escapeHtml(data.arrival_status)}
+          </span>
+        </div>
+      </div>
+
+      <!-- 환자 정보 -->
+      <div class="row g-2 mb-4">
+        <div class="col-4"><div class="info-box"><div class="label">환자명 / 나이</div><div class="value">${escapeHtml(patTxt)}</div></div></div>
+        <div class="col-4"><div class="info-box"><div class="label">검체명</div><div class="value">${escapeHtml(data.specimen_name || "-")}</div></div></div>
+        <div class="col-4"><div class="info-box"><div class="label">도착 상태</div>
+          <div class="value"><span class="badge text-bg-${statusClr}">${escapeHtml(data.arrival_status)}</span></div>
+        </div></div>
+      </div>
+
+      <!-- 학부 카드 -->
+      <div class="row g-2 mb-4">
+        ${deptCards || '<div class="col-12"><div class="alert alert-warning mb-0">학부 정보가 없습니다.</div></div>'}
+      </div>
+
+      <!-- 도착 확인 -->
+      <div class="section-divider mb-3"><h2><i class="bi bi-check-circle me-2"></i>도착 확인 정보</h2></div>
+      <div class="table-responsive mb-4">
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>카테고리</th><th>확인시간</th><th>확인자</th><th>확인 PC</th><th>구분</th></tr></thead>
+          <tbody>${arrivalRows || '<tr><td colspan="5" class="text-center text-secondary py-3">아직 도착처리되지 않았습니다.</td></tr>'}</tbody>
+        </table>
+      </div>
+
+      <!-- 미생물 Hole -->
+      <div class="section-divider mb-3"><h2><i class="bi bi-virus2 me-2"></i>미생물 Hole 정보</h2></div>
+      <div class="table-responsive mb-4">
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>학부</th><th>Culture type</th><th>Hole 코드</th><th>위치</th><th>발급시간</th></tr></thead>
+          <tbody>${holeRows || '<tr><td colspan="5" class="text-center text-secondary py-3">발급된 Hole 정보가 없습니다.</td></tr>'}</tbody>
+        </table>
+      </div>
+
+      <!-- 검사항목 -->
+      <div class="section-divider mb-3"><h2><i class="bi bi-list-check me-2"></i>검사항목</h2></div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th style="width:90px">검사코드</th><th>검사항목</th><th>학부</th><th class="text-center" style="width:70px">분주</th><th class="text-center" style="width:70px">전달</th></tr></thead>
+          <tbody>${testRows || '<tr><td colspan="5" class="text-center text-secondary py-3">검사항목이 없습니다.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function addFindHistory(accNo, data) {
+  findHistoryLog.unshift({ accNo, arrived: data.arrival_status === "도착", order_found: data.order_found, ts: new Date() });
+  if (findHistoryLog.length > 8) findHistoryLog.pop();
+  const el = document.getElementById("findHistory");
+  el.innerHTML = findHistoryLog.map(h => {
+    const color = h.arrived ? "success" : h.order_found ? "secondary" : "warning";
+    const icon  = h.arrived ? "check2-all" : h.order_found ? "eye" : "question-circle";
+    return `
+      <div class="d-flex align-items-center gap-2 p-2" style="border-radius:6px;background:var(--gray-50);font-size:.8rem;cursor:pointer"
+           onclick="document.getElementById('findBarcode').value='${escapeHtml(h.accNo)}';findSpecimen(document.getElementById('findBarcode'))">
+        <i class="bi bi-${icon} text-${color}"></i>
+        <span class="fw-semibold font-monospace">${escapeHtml(h.accNo)}</span>
+        <span class="ms-auto text-secondary">${h.ts.toLocaleTimeString("ko-KR",{hour12:false})}</span>
+      </div>`;
+  }).join("");
+}
+
+document.getElementById("findBarcode").addEventListener("input", e => {
+  const input = e.target;
+  const len = input.value.length;
+  if (len <= 1 || len < findLastLength) findStartedAt = Date.now();
+  findLastLength = len;
+  clearTimeout(findTimer);
+  findTimer = setTimeout(() => { if (looksLikeFindScanner(input)) findSpecimen(input); }, 220);
+});
+document.getElementById("findBarcode").addEventListener("keydown", async e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  clearTimeout(findTimer);
+  await findSpecimen(e.target);
+  findStartedAt = 0; findLastLength = 0;
+});
+
+// 누락검체 페이지에서 넘어온 경우
+const preloaded = localStorage.getItem("findAccessionNo");
+if (preloaded) {
+  localStorage.removeItem("findAccessionNo");
+  const input = document.getElementById("findBarcode");
+  input.value = preloaded;
+  findSpecimen(input);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,1210 @@
+{% extends "base.html" %}
+{% block title %}학부별 소분류{% endblock %}
+{% block content %}
+<div class="no-print">
+<div class="d-flex gap-3 align-items-start">
+
+  <!-- ═══════════ 왼쪽 패널: 학부 선택 + 소분류/culture type 목록 ═══════════ -->
+  <div style="flex:0 0 270px;width:270px">
+    <div class="page-panel sticky-top-panel">
+      <div class="panel-header">
+        <div class="panel-icon"><i class="bi bi-grid-3x3-gap"></i></div>
+        <h1>학부별 소분류</h1>
+      </div>
+
+      <!-- 학부 선택 버튼 -->
+      <div id="deptList" class="d-flex flex-column gap-2 mb-3"></div>
+
+      <!-- 미생물 전용 안내 -->
+      <div id="microHint" class="mb-2" style="display:none;font-size:.76rem;
+           background:var(--accent-light);border-radius:6px;padding:7px 10px;color:#1e3a8a">
+        <i class="bi bi-magic me-1"></i>스캔하면 소분류 자동 판정<br>
+        <span class="text-secondary" style="font-size:.72rem">클릭 시 해당 소분류 현황 조회</span>
+      </div>
+
+      <!-- 소분류 / culture type 목록 -->
+      <div id="subcatList" class="subcategory-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 미생물 전용 메인 영역 ═══════════ -->
+  <div style="flex:1;min-width:0" id="microContent">
+
+    <!-- 1행: 스캔 패널 + 결과 카드 + 랙 UI (한 화면, flexbox) -->
+    <div class="d-flex gap-3 mb-3 align-items-stretch">
+
+      <!-- 스캔 패널: 고정 너비 -->
+      <div style="flex:0 0 270px">
+        <div class="page-panel h-100">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="fw-bold" style="font-size:.92rem">
+              <i class="bi bi-upc-scan me-2 text-primary"></i>자동 소분류 스캔
+            </div>
+            <span class="badge text-bg-primary">Auto</span>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label fw-semibold" style="font-size:.82rem">확인자</label>
+              <input id="subOperatorName" class="form-control" autocomplete="off" placeholder="이름">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold" style="font-size:.82rem">확인 PC</label>
+              <input id="subWorkstationName" class="form-control" autocomplete="off" placeholder="SCAN-PC-1">
+            </div>
+          </div>
+          <label class="form-label fw-semibold d-flex align-items-center gap-2">
+            바코드 스캔
+            <span>
+              <span class="scan-status-dot ready" id="subDot"></span>
+              <span id="subStatusText" class="small text-secondary">대기 중</span>
+            </span>
+          </label>
+          <input id="subBarcode" class="form-control scan-input" autofocus autocomplete="off"
+                 placeholder="스캔 또는 Enter">
+          <div class="form-text mt-2">
+            <i class="bi bi-magic me-1 text-primary"></i>소분류 자동 판정 — 선택 없이 스캔하세요
+          </div>
+          <div id="subdivisionMessage" class="mt-3"></div>
+        </div>
+      </div>
+
+      <!-- 결과 카드: 나머지 공간 (최대 폭 제한) -->
+      <div style="flex:1;min-width:200px;max-width:420px">
+        <div id="subdivisionResult"
+             style="height:100%;min-height:220px;border-radius:10px;border:2px dashed var(--border);
+                    background:#fff;display:flex;align-items:center;justify-content:center;
+                    color:var(--gray-400);text-align:center;padding:24px;font-size:.88rem">
+          <div>
+            <i class="bi bi-qr-code-scan" style="font-size:2.2rem;display:block;margin-bottom:10px;color:var(--gray-300)"></i>
+            검체를 스캔하면 소분류와 랙 위치를 알려드립니다.
+          </div>
+        </div>
+      </div>
+
+      <!-- 랙 UI — 콘텐츠 너비에 맞춤 (flex-shrink:0, 고정 너비) -->
+      <div style="flex-shrink:0">
+        <div class="page-panel h-100" style="min-height:220px;width:290px">
+
+          <!-- 스캔 전 안내 -->
+          <div id="rackEmpty"
+               style="height:100%;display:flex;flex-direction:column;align-items:center;
+                      justify-content:center;color:var(--gray-400);font-size:.8rem;text-align:center">
+            <i class="bi bi-grid-3x3-gap"
+               style="font-size:2rem;display:block;margin-bottom:8px;color:var(--gray-300)"></i>
+            스캔 후<br>랙 위치 표시
+          </div>
+
+          <!-- 랙 내용 (스캔 후 표시) -->
+          <div id="rackArea" style="display:none">
+
+            <!-- 소분류명 + 진행 -->
+            <div class="mb-2 d-flex align-items-baseline gap-2 flex-wrap">
+              <span class="fw-bold" id="rackTitle" style="font-size:.82rem">-</span>
+              <span class="text-secondary" id="rackSubtitle" style="font-size:.72rem"></span>
+            </div>
+
+            <!-- 랙 크기 선택 + 랙 번호 선택 -->
+            <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
+              <button id="rack50Btn"  class="btn btn-sm btn-primary"
+                      onclick="setRackSize(50)"  style="padding:1px 8px;font-size:.75rem">50칸</button>
+              <button id="rack100Btn" class="btn btn-sm btn-outline-secondary"
+                      onclick="setRackSize(100)" style="padding:1px 8px;font-size:.75rem">100칸</button>
+              <div id="rackSelector" class="d-flex gap-1 flex-wrap"></div>
+            </div>
+
+            <!-- 범례 -->
+            <div class="d-flex gap-2 mb-2" style="font-size:.68rem">
+              <span style="display:inline-flex;align-items:center;gap:3px;color:#64748b">
+                <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#f1f5f9;border:1px solid #e2e8f0"></span>미처리
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:3px;color:#64748b">
+                <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#dcfce7;border:1px solid #bbf7d0"></span>완료
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:3px;color:#64748b">
+                <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#fef08a;border:1px solid #f59e0b"></span>방금
+              </span>
+            </div>
+
+            <!-- 랙 그리드 — JS 인라인 스타일로 직접 렌더링 -->
+            <div id="rackGrid"></div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 3행: 진행률 + 남은 예정 목록 -->
+    <div id="microProgressArea" class="page-panel mb-3" style="display:none">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+        <div class="fw-bold" id="progressCultureTitle" style="font-size:.88rem">-</div>
+        <div class="d-flex gap-3" style="font-size:.8rem;color:var(--gray-600)">
+          <span>전체 <strong id="cntTotal" class="text-body">-</strong></span>
+          <span>완료 <strong id="cntDone" class="text-success">-</strong></span>
+          <span>남은 <strong id="cntPending" class="text-warning">-</strong></span>
+          <strong id="progressText" class="text-primary">-</strong>
+        </div>
+      </div>
+      <div class="progress mb-3" style="height:7px">
+        <div id="progressBar" class="progress-bar bg-success" style="width:0%"></div>
+      </div>
+
+      <!-- 남은 예정 목록 (접기/펼치기) -->
+      <button class="btn btn-sm btn-outline-secondary w-100 d-flex justify-content-between align-items-center"
+              type="button" data-bs-toggle="collapse" data-bs-target="#pendingCollapse">
+        <span>
+          <i class="bi bi-list-check me-2"></i>남은 예정 목록
+          <span id="pendingBadge" class="badge text-bg-warning ms-1">0</span>
+        </span>
+        <i class="bi bi-chevron-down"></i>
+      </button>
+      <div class="collapse" id="pendingCollapse">
+        <div class="table-responsive mt-2">
+          <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem">
+            <thead>
+              <tr>
+                <th style="width:58px" class="text-center">소분류순</th>
+                <th>접수번호</th>
+                <th>성명/나이</th>
+                <th>검사명</th>
+                <th>검체명</th>
+              </tr>
+            </thead>
+            <tbody id="pendingRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4행: 스캔 작업 목록 (오늘 전체 미생물) -->
+    <div class="page-panel">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div>
+          <div class="fw-bold" style="font-size:.95rem">
+            <i class="bi bi-card-checklist me-2"></i>스캔 작업 목록
+          </div>
+          <div class="text-secondary" id="statusCaption" style="font-size:.78rem">오늘 처리된 미생물 소분류 목록</div>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-success" onclick="downloadCurrentExcel()">
+            <i class="bi bi-file-earmark-excel me-1"></i>엑셀
+          </button>
+          <button class="btn btn-sm btn-outline-primary" onclick="printCurrent()">
+            <i class="bi bi-printer me-1"></i>출력
+          </button>
+        </div>
+      </div>
+      <div id="subcategoryPages"></div>
+    </div>
+
+  </div><!-- /microContent -->
+
+  <!-- ═══════════ 비미생물 전용 메인 영역 ═══════════ -->
+  <div style="flex:1;min-width:0" id="nonMicroContent" style="display:none">
+    <div class="d-flex gap-3">
+
+      <!-- 스캔 패널 (비미생물) -->
+      <div style="flex:0 0 270px">
+        <div class="page-panel sticky-top-panel">
+          <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
+            <div>
+              <div class="text-secondary"
+                   style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px">선택된 소분류</div>
+              <div id="selDeptTitle" class="fw-bold" style="font-size:1.1rem">-</div>
+              <div id="selSubcatTitle" class="text-secondary" style="font-size:.88rem">-</div>
+            </div>
+            <span class="badge text-bg-primary">번호 발급</span>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label fw-semibold" style="font-size:.82rem">확인자</label>
+              <input id="nmOperatorName" class="form-control" autocomplete="off" placeholder="이름">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold" style="font-size:.82rem">확인 PC</label>
+              <input id="nmWorkstationName" class="form-control" autocomplete="off" placeholder="SCAN-PC-1">
+            </div>
+          </div>
+          <label class="form-label fw-semibold d-flex align-items-center gap-2">
+            바코드 스캔
+            <span>
+              <span class="scan-status-dot ready" id="nmDot"></span>
+              <span id="nmStatusText" class="small text-secondary">대기 중</span>
+            </span>
+          </label>
+          <input id="nmBarcode" class="form-control scan-input" autocomplete="off"
+                 placeholder="스캔하면 자동 처리">
+          <div class="form-text mt-2">
+            <i class="bi bi-info-circle me-1"></i>학부·소분류 선택 후 스캔하세요.
+          </div>
+          <div id="nmMessage" class="mt-3"></div>
+        </div>
+      </div>
+
+      <!-- 결과 + 작업 목록 (비미생물) -->
+      <div style="flex:1;min-width:0">
+        <div id="nmResult" class="mb-3"
+             style="border-radius:10px;border:2px dashed var(--border);background:var(--gray-50);
+                    padding:14px 18px;display:flex;align-items:center;gap:12px;
+                    color:var(--gray-400);font-size:.88rem">
+          <i class="bi bi-qr-code-scan fs-4"></i>
+          <span>소분류 항목을 선택하고 검체를 스캔하세요.</span>
+        </div>
+        <div class="page-panel">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div>
+              <div class="fw-bold" style="font-size:.95rem">스캔 작업 목록</div>
+              <div class="text-secondary" id="nmStatusCaption" style="font-size:.78rem">선택한 소분류 처리 목록</div>
+            </div>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-success" onclick="downloadCurrentExcel()">
+                <i class="bi bi-file-earmark-excel me-1"></i>엑셀
+              </button>
+              <button class="btn btn-sm btn-outline-primary" onclick="printCurrent()">
+                <i class="bi bi-printer me-1"></i>출력
+              </button>
+            </div>
+          </div>
+          <div id="nmPages"></div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /nonMicroContent -->
+
+</div>
+</div><!-- /no-print -->
+
+<!-- 출력 전용 -->
+<div id="printArea" class="print-only">
+  <h1 style="font-size:16px;margin-bottom:8px">학부별 소분류 현황</h1>
+  <div id="printPages"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+// ───────────────────────────────────────────────────────────────
+// 데이터 초기화
+// ───────────────────────────────────────────────────────────────
+const deptSubs = {{ department_subcategories | tojson }};
+const cultureTypes = {{ micro_culture_types | tojson }};
+
+const subcatDesc = {
+  "Urine culture":"소변 배양","Sputum culture":"객담 배양",
+  "Stool/Rectal culture":"대변/직장 배양","CRE culture":"CRE 배양",
+  "VRE culture":"VRE 배양","보건증":"Salmonella/Shigella",
+  "Tip culture":"Tip 배양","Bronchial washing culture":"기관지세척 배양",
+  "Other culture":"기타 배양",
+  "Urine routine":"요 일반","Urine sediment":"요침사",
+  "Microscopy(Urine)":"요 현미경","Body fluid microscopy":"체액 현미경",
+  "Pregnancy test":"임신 반응","Other urine":"기타 요검사",
+  "MTB PCR":"결핵 PCR","STI PCR":"성매개 PCR","Respiratory PCR":"호흡기 PCR",
+  "GI virus PCR":"장관 바이러스 PCR","C. difficile PCR":"C.diff PCR","Other PCR":"기타 PCR",
+};
+
+const subcatIcons = {
+  "Urine culture":             "bi-droplet-fill",
+  "Sputum culture":            "bi-lungs",
+  "Stool/Rectal culture":      "bi-moisture",
+  "CRE culture":               "bi-virus",
+  "VRE culture":               "bi-virus2",
+  "보건증":                     "bi-file-earmark-medical",
+  "Tip culture":               "bi-thermometer-half",
+  "Bronchial washing culture": "bi-lungs-fill",
+  "Other culture":             "bi-flask",
+  "Urine routine":             "bi-droplet",
+  "Urine sediment":            "bi-layers",
+  "Microscopy(Urine)":         "bi-zoom-in",
+  "Body fluid microscopy":     "bi-water",
+  "Pregnancy test":            "bi-heart-pulse",
+  "Other urine":               "bi-three-dots",
+  "MTB PCR":                   "bi-bug",
+  "STI PCR":                   "bi-gender-ambiguous",
+  "Respiratory PCR":           "bi-wind",
+  "GI virus PCR":              "bi-bacteria",
+  "C. difficile PCR":          "bi-exclamation-diamond",
+  "Other PCR":                 "bi-diagram-3",
+};
+
+// ───────────────────────────────────────────────────────────────
+// 상태 변수
+// ───────────────────────────────────────────────────────────────
+let activeDept   = Object.keys(deptSubs)[0] || "미생물";
+let activeSubcat = deptSubs[activeDept]?.[0] || "";
+
+// 미생물 전용 상태
+let planData            = null;
+let cultureSummary      = {};
+let currentDisplayRackNo = 1;
+let lastHighlightPos    = null;
+let sessionScanNo       = 0;
+let rackSize            = parseInt(localStorage.getItem("rackSize") || "50");
+
+// 비미생물 전용 상태
+let latestRows  = [];
+let groupedRows = {};
+
+// 스캔 버튼 상태
+let subBusy = false, subTimer = null, subStartedAt = 0, subLastLength = 0;
+let nmBusy  = false, nmTimer  = null, nmStartedAt  = 0, nmLastLength  = 0;
+
+const isMicro = () => activeDept === "미생물";
+
+// ───────────────────────────────────────────────────────────────
+// 사용자 정보 (localStorage)
+// ───────────────────────────────────────────────────────────────
+const subUser = JSON.parse(localStorage.getItem("currentUser") || "null");
+
+const subOp = document.getElementById("subOperatorName");
+const subWs = document.getElementById("subWorkstationName");
+subOp.value = subUser?.display_name || localStorage.getItem("operatorName") || "";
+subWs.value = localStorage.getItem("workstationName") || "SCAN-PC-1";
+subOp.addEventListener("input", () => localStorage.setItem("operatorName",    subOp.value.trim()));
+subWs.addEventListener("input", () => localStorage.setItem("workstationName", subWs.value.trim()));
+
+const nmOp = document.getElementById("nmOperatorName");
+const nmWs = document.getElementById("nmWorkstationName");
+nmOp.value = subOp.value;
+nmWs.value = subWs.value;
+nmOp.addEventListener("input", () => { localStorage.setItem("operatorName",    nmOp.value.trim()); subOp.value = nmOp.value; });
+nmWs.addEventListener("input", () => { localStorage.setItem("workstationName", nmWs.value.trim()); subWs.value = nmWs.value; });
+
+// ───────────────────────────────────────────────────────────────
+// 학부 / 소분류 렌더링
+// ───────────────────────────────────────────────────────────────
+function renderDeptList() {
+  document.getElementById("deptList").innerHTML = Object.keys(deptSubs).map(dept => `
+    <button class="dept-picker-btn ${dept === activeDept ? "active" : ""}"
+            data-dept="${escapeHtml(dept)}" type="button">
+      <i class="bi bi-building"></i>${escapeHtml(dept)}
+      <i class="bi bi-chevron-right dept-arrow"></i>
+    </button>`).join("");
+  document.querySelectorAll(".dept-picker-btn").forEach(btn =>
+    btn.addEventListener("click", () => selectDept(btn.dataset.dept))
+  );
+}
+
+function renderSubcatList(dept, selSubcat) {
+  const items = deptSubs[dept] || [];
+  const isMicroMode = dept === "미생물";
+
+  document.getElementById("microHint").style.display = isMicroMode ? "" : "none";
+
+  document.getElementById("subcatList").innerHTML = items.map(item => {
+    const icon  = subcatIcons[item] || "bi-grid";
+    const desc  = subcatDesc[item]  || "소분류 검사";
+    let badge = "";
+    if (isMicroMode) {
+      const s = cultureSummary[item] || {};
+      if (s.total > 0) {
+        const allDone = s.done === s.total;
+        badge = `<span class="badge ms-1 ${allDone ? 'text-bg-success' : 'text-bg-warning'}"
+                       style="font-size:.7rem">${s.done}/${s.total}</span>`;
+      }
+    }
+    return `
+      <button class="subcat-btn ${item === selSubcat ? 'active' : ''}"
+              data-subcat="${escapeHtml(item)}" type="button">
+        <span class="subcat-icon"><i class="bi ${icon}"></i></span>
+        <span class="subcat-text">
+          <strong>${escapeHtml(item)}</strong>
+          <small>${escapeHtml(desc)}</small>
+        </span>
+        ${badge}
+        <i class="bi bi-chevron-right" style="color:var(--gray-300);font-size:.8rem"></i>
+      </button>`;
+  }).join("");
+
+  document.querySelectorAll(".subcat-btn").forEach(btn =>
+    btn.addEventListener("click", () => selectSubcat(btn.dataset.subcat))
+  );
+}
+
+function selectDept(dept) {
+  activeDept  = dept;
+  activeSubcat = deptSubs[dept]?.[0] || "";
+  renderDeptList();
+  renderSubcatList(dept, activeSubcat);
+  updateLayoutVisibility();
+  loadData();
+  focusScanInput();
+}
+
+function selectSubcat(subcat) {
+  activeSubcat = subcat;
+  renderSubcatList(activeDept, subcat);
+  if (isMicro()) {
+    currentDisplayRackNo = 1;
+    lastHighlightPos = null;
+    loadMicroPlans(subcat);
+  } else {
+    updateNonMicroDisplay();
+  }
+  focusScanInput();
+}
+
+function updateLayoutVisibility() {
+  const micro = isMicro();
+  document.getElementById("microContent").style.display    = micro ? "" : "none";
+  document.getElementById("nonMicroContent").style.display = micro ? "none" : "";
+}
+
+function updateNonMicroDisplay() {
+  document.getElementById("selDeptTitle").textContent   = activeDept;
+  document.getElementById("selSubcatTitle").textContent = activeSubcat;
+  document.getElementById("nmStatusCaption").textContent = `${activeDept} / ${activeSubcat} 처리 목록`;
+}
+
+function focusScanInput() {
+  if (isMicro()) document.getElementById("subBarcode")?.focus();
+  else           document.getElementById("nmBarcode")?.focus();
+}
+
+// ───────────────────────────────────────────────────────────────
+// 스캔 상태 표시
+// ───────────────────────────────────────────────────────────────
+function setSubState(busy) {
+  const dot  = document.getElementById("subDot");
+  const text = document.getElementById("subStatusText");
+  dot.className  = busy ? "scan-status-dot busy" : "scan-status-dot ready";
+  text.textContent = busy ? "처리 중…" : "대기 중";
+}
+function setNmState(busy) {
+  const dot  = document.getElementById("nmDot");
+  const text = document.getElementById("nmStatusText");
+  dot.className  = busy ? "scan-status-dot busy" : "scan-status-dot ready";
+  text.textContent = busy ? "처리 중…" : "대기 중";
+}
+
+function looksLikeScanner(val, startedAt) {
+  return val.trim().length >= 6 && Date.now() - startedAt <= 700;
+}
+
+// ───────────────────────────────────────────────────────────────
+// 미생물 자동 소분류 스캔
+// ───────────────────────────────────────────────────────────────
+async function submitSubBarcode(input) {
+  const accNo = input.value.trim();
+  if (!accNo || subBusy) return;
+  subBusy = true;
+  input.value = "";
+  setSubState(true);
+
+  try {
+    const res = await postJson("/api/micro/auto-culture-scan", {
+      accession_no:     accNo,
+      rack_size:        rackSize,
+      client_name:      navigator.userAgent.slice(0, 100),
+      operator_name:    subOp.value.trim(),
+      workstation_name: subWs.value.trim(),
+    });
+
+    if (res.culture_type && (res.status === "ASSIGNED" || res.status === "DUPLICATE")) {
+      sessionScanNo++;
+      activeSubcat = res.culture_type;
+      // culture_order 기준으로 현재 rackSize에 맞는 위치 재계산
+      if (res.culture_order) {
+        const dp = getDisplayPosition(res.culture_order, rackSize);
+        res._displayRackNo  = dp.rack_no;
+        res._displayRackPos = dp.rack_pos;
+        currentDisplayRackNo = dp.rack_no;
+        lastHighlightPos = (res.status === "ASSIGNED") ? dp.rack_pos : null;
+      }
+      renderSubcatList(activeDept, activeSubcat);
+    }
+
+    renderAutoMicroResult(res);
+
+    await Promise.all([
+      loadMicroPlans(activeSubcat),
+      loadCultureSummary(),
+      loadTodayAssignments(),
+    ]);
+
+    const ok  = res.status === "ASSIGNED";
+    const dup = res.status === "DUPLICATE";
+    showToast(
+      ok ? "소분류 완료" : dup ? "중복 처리" : "처리 불가",
+      res.message,
+      ok ? "success" : dup ? "warning" : "danger",
+    );
+  } catch (err) {
+    document.getElementById("subdivisionMessage").innerHTML =
+      `<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>${escapeHtml(err.message)}</div>`;
+    showToast("오류", err.message, "danger");
+  } finally {
+    subBusy = false;
+    setSubState(false);
+    input.focus();
+  }
+}
+
+document.getElementById("subBarcode").addEventListener("input", e => {
+  const input = e.target;
+  const len   = input.value.length;
+  if (len <= 1 || len < subLastLength) subStartedAt = Date.now();
+  subLastLength = len;
+  clearTimeout(subTimer);
+  subTimer = setTimeout(() => {
+    if (looksLikeScanner(input.value, subStartedAt)) submitSubBarcode(input);
+  }, 220);
+});
+document.getElementById("subBarcode").addEventListener("keydown", async e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  clearTimeout(subTimer);
+  await submitSubBarcode(e.target);
+  subStartedAt = 0; subLastLength = 0;
+});
+
+// ───────────────────────────────────────────────────────────────
+// 비미생물 스캔
+// ───────────────────────────────────────────────────────────────
+async function submitNmBarcode(input) {
+  const accNo = input.value.trim();
+  if (!accNo || nmBusy) return;
+  nmBusy = true;
+  input.value = "";
+  setNmState(true);
+
+  try {
+    const res = await postJson("/api/micro/subcategory-scan", {
+      accession_no:     accNo,
+      department_name:  activeDept,
+      subcategory:      activeSubcat,
+      client_name:      navigator.userAgent.slice(0, 100),
+      operator_name:    nmOp.value.trim(),
+      workstation_name: nmWs.value.trim(),
+    });
+    renderDeptSubResult(res);
+    await loadAssignments();
+    const ok = res.status === "ASSIGNED";
+    const dup = res.status === "DUPLICATE";
+    showToast(
+      ok ? "번호 발급 완료" : dup ? "중복 검체" : res.status === "NO_ARRIVAL" ? "도착관리 필요" : "처리 불가",
+      res.message,
+      ok ? "success" : (dup || res.status === "NO_ARRIVAL") ? "warning" : "danger",
+    );
+  } catch (err) {
+    document.getElementById("nmMessage").innerHTML =
+      `<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>${escapeHtml(err.message)}</div>`;
+    showToast("오류", err.message, "danger");
+  } finally {
+    nmBusy = false;
+    setNmState(false);
+    input.focus();
+  }
+}
+
+document.getElementById("nmBarcode").addEventListener("input", e => {
+  const input = e.target;
+  const len   = input.value.length;
+  if (len <= 1 || len < nmLastLength) nmStartedAt = Date.now();
+  nmLastLength = len;
+  clearTimeout(nmTimer);
+  nmTimer = setTimeout(() => {
+    if (looksLikeScanner(input.value, nmStartedAt)) submitNmBarcode(input);
+  }, 220);
+});
+document.getElementById("nmBarcode").addEventListener("keydown", async e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  clearTimeout(nmTimer);
+  await submitNmBarcode(e.target);
+  nmStartedAt = 0; nmLastLength = 0;
+});
+
+// ───────────────────────────────────────────────────────────────
+// 결과 렌더링 — 미생물 자동 소분류
+// ───────────────────────────────────────────────────────────────
+function renderAutoMicroResult(res) {
+  const el  = document.getElementById("subdivisionResult");
+  const msg = document.getElementById("subdivisionMessage");
+
+  // ── 오류 상태 ──
+  const errStates = ["UNREGISTERED","WRONG_DEPARTMENT","NO_CULTURE_MATCH","NOT_IN_PLAN"];
+  if (errStates.includes(res.status)) {
+    const icons = {
+      UNREGISTERED:     "bi-question-circle",
+      WRONG_DEPARTMENT: "bi-x-octagon",
+      NO_CULTURE_MATCH: "bi-puzzle",
+      NOT_IN_PLAN:      "bi-calendar-x",
+    };
+    const icon = icons[res.status] || "bi-exclamation-triangle";
+    el.innerHTML = `
+      <div style="border-radius:10px;border:2px solid #ef4444;background:#fef2f2;padding:20px">
+        <div class="d-flex align-items-center gap-3 mb-2">
+          <i class="bi ${icon} fs-2 text-danger" style="flex-shrink:0"></i>
+          <div>
+            <div class="fw-bold text-danger mb-1">${escapeHtml(res.status)}</div>
+            <div style="font-size:.88rem;color:#475569">${escapeHtml(res.message)}</div>
+          </div>
+        </div>
+        ${res.accession_no
+          ? `<div class="font-monospace mt-2" style="font-size:.82rem;color:#94a3b8">${escapeHtml(res.accession_no)}</div>`
+          : ""}
+      </div>`;
+    msg.innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(res.message)}</div>`;
+    return;
+  }
+
+  // ── 복수 소분류 ──
+  if (res.status === "MULTI_CULTURE") {
+    el.innerHTML = `
+      <div style="border-radius:10px;border:2px solid #f59e0b;background:#fefce8;padding:20px">
+        <div class="fw-bold mb-2" style="color:#92400e">
+          <i class="bi bi-exclamation-triangle-fill me-2"></i>복수 소분류 대상
+        </div>
+        <div class="mb-2" style="font-size:.88rem;color:#78350f">${escapeHtml(res.message)}</div>
+        <div class="d-flex flex-wrap gap-2">
+          ${(res.culture_types || []).map(ct =>
+            `<span class="badge text-bg-warning">${escapeHtml(ct)}</span>`).join("")}
+        </div>
+        ${res.accession_no
+          ? `<hr style="margin:10px 0;border-color:#f59e0b40">
+             <div class="d-flex flex-wrap gap-3" style="font-size:.82rem">
+               <span class="font-monospace fw-bold">${escapeHtml(res.accession_no)}</span>
+               <span>${escapeHtml(patientText(res))}</span>
+               <span>${escapeHtml(res.specimen_name||"")}</span>
+             </div>`
+          : ""}
+      </div>`;
+    msg.innerHTML = `<div class="alert alert-warning mb-0">${escapeHtml(res.message)}</div>`;
+    return;
+  }
+
+  // ── ASSIGNED / DUPLICATE ──
+  const isDup      = res.status === "DUPLICATE";
+  const accentColor = isDup ? "#f59e0b" : "#22c55e";
+  const bgColor     = isDup ? "#fefce8" : "#f0fdf4";
+  const textColor   = isDup ? "#78350f" : "#14532d";
+
+  // 표시 위치: 스캔 시 계산된 값 또는 culture_order 기준 재계산
+  let dispRack = res._displayRackNo;
+  let dispPos  = res._displayRackPos;
+  if (!dispRack && res.culture_order) {
+    const dp = getDisplayPosition(res.culture_order, rackSize);
+    dispRack = dp.rack_no;
+    dispPos  = dp.rack_pos;
+  }
+  dispRack = dispRack ?? res.rack_no ?? "-";
+  dispPos  = dispPos  ?? res.rack_position ?? "-";
+
+  el.innerHTML = `
+    <div style="border-radius:12px;border:2.5px solid ${accentColor};background:${bgColor};padding:22px">
+
+      <!-- 소분류명 + 상태 뱃지 -->
+      <div class="d-flex align-items-center justify-content-between mb-3 pb-2"
+           style="border-bottom:1.5px solid ${accentColor}40">
+        <div style="font-size:1.1rem;font-weight:800;color:${textColor}">
+          <i class="bi ${isDup ? "bi-clock-history" : "bi-check-circle-fill"} me-2"></i>
+          ${escapeHtml(res.culture_type)}
+        </div>
+        <span class="badge ${isDup ? "text-bg-warning" : "text-bg-success"}">
+          ${isDup ? "중복 처리" : "처리 완료"}
+        </span>
+      </div>
+
+      <!-- 랙 번호 · 칸 번호 크게 표시 -->
+      <div style="display:flex;gap:12px;align-items:stretch;margin-bottom:14px">
+        <div style="flex:1;text-align:center;background:rgba(0,0,0,.05);border-radius:10px;padding:18px 12px">
+          <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-bottom:6px">랙 번호</div>
+          <div style="font-size:3.8rem;font-weight:900;line-height:1;color:${accentColor}">${dispRack}</div>
+        </div>
+        <div style="flex:2;text-align:center;background:${accentColor};border-radius:10px;padding:18px 12px">
+          <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:rgba(255,255,255,.75);margin-bottom:6px">칸 번호</div>
+          <div style="font-size:3.8rem;font-weight:900;line-height:1;color:#fff">${dispPos}</div>
+        </div>
+      </div>
+
+      <!-- 안내 문구 -->
+      <div style="text-align:center;font-size:1rem;font-weight:800;color:${textColor};
+                  background:rgba(255,255,255,.6);border-radius:8px;padding:10px;margin-bottom:14px">
+        ${isDup
+          ? "이미 처리된 검체입니다"
+          : `${dispRack}번 랙 &nbsp;·&nbsp; <strong style="font-size:1.15rem">${dispPos}번 칸</strong>에 꽂으세요`}
+      </div>
+
+      <!-- 환자 / 검사 정보 그리드 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.82rem">
+        <div style="background:rgba(255,255,255,.7);border-radius:6px;padding:8px 10px">
+          <div style="font-size:.66rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">접수번호</div>
+          <div style="font-weight:700;font-family:monospace;font-size:.92rem">${escapeHtml(res.accession_no)}</div>
+        </div>
+        <div style="background:rgba(255,255,255,.7);border-radius:6px;padding:8px 10px">
+          <div style="font-size:.66rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">환자 / 나이</div>
+          <div style="font-weight:600">${escapeHtml(patientText(res))}</div>
+        </div>
+        <div style="background:rgba(255,255,255,.7);border-radius:6px;padding:8px 10px">
+          <div style="font-size:.66rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">검사명</div>
+          <div style="font-weight:600;word-break:keep-all">${escapeHtml((res.test_names||[]).join(", "))}</div>
+        </div>
+        <div style="background:rgba(255,255,255,.7);border-radius:6px;padding:8px 10px">
+          <div style="font-size:.66rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">검체명</div>
+          <div style="font-weight:600">${escapeHtml(res.specimen_name||"")}</div>
+        </div>
+      </div>
+    </div>`;
+
+  msg.innerHTML = `<div class="alert alert-${isDup ? "warning" : "success"} mb-0">${escapeHtml(res.message)}</div>`;
+}
+
+// ───────────────────────────────────────────────────────────────
+// 결과 렌더링 — 비미생물 소분류
+// ───────────────────────────────────────────────────────────────
+function renderDeptSubResult(res) {
+  const el  = document.getElementById("nmResult");
+  const msg = document.getElementById("nmMessage");
+  if (res.status === "NO_ARRIVAL") {
+    el.innerHTML = `
+      <div class="hole-card hole-card-no-arrival text-center w-100">
+        <div class="mb-2"><i class="bi bi-exclamation-triangle fs-1" style="color:#f59e0b"></i></div>
+        <div class="fw-bold mb-1" style="font-size:1.05rem;color:#92400e">도착관리 미완료</div>
+        <div class="text-secondary mb-3" style="font-size:.88rem">${escapeHtml(res.message)}</div>
+        <a href="/scan" class="btn btn-sm btn-warning">
+          <i class="bi bi-qr-code-scan me-1"></i>도착관리 페이지로 이동
+        </a>
+      </div>`;
+    return;
+  }
+  if (!res.assignment) {
+    el.innerHTML = `
+      <div style="border-radius:10px;border:2px solid #ef4444;background:#fef2f2;
+                  padding:14px 18px;display:flex;align-items:flex-start;gap:12px">
+        <i class="bi bi-x-circle fs-4 text-danger" style="flex-shrink:0;margin-top:2px"></i>
+        <div>
+          <div class="fw-semibold text-danger mb-1">${escapeHtml(res.status)}</div>
+          <div style="font-size:.85rem;color:#475569">${escapeHtml(res.message)}</div>
+        </div>
+      </div>`;
+    return;
+  }
+  const isDup   = res.status === "DUPLICATE";
+  const assign  = res.assignment;
+  const border  = isDup ? "#f59e0b" : "#22c55e";
+  const bg      = isDup ? "#fef9c3" : "#f0fdf4";
+  el.innerHTML = `
+    <div style="border-radius:10px;border:2px solid ${border};background:${bg};
+                padding:14px 18px;display:flex;align-items:center;gap:14px">
+      <i class="bi ${isDup ? "bi-clock-history" : "bi-check-circle-fill"} fs-2" style="color:${border};flex-shrink:0"></i>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:1.25rem;font-weight:700;font-family:monospace;letter-spacing:1px;line-height:1.2">
+          ${escapeHtml(assign.accession_no)}
+        </div>
+        <div style="font-size:.83rem;color:#475569;margin-top:4px;display:flex;flex-wrap:wrap;gap:10px">
+          <span>${escapeHtml(assign.department_name)} / ${escapeHtml(assign.subcategory)}</span>
+          <span style="color:#94a3b8">${escapeHtml(assign.location_code)}</span>
+        </div>
+        ${isDup ? '<span class="badge text-bg-warning mt-2">이미 발급된 번호</span>' : ""}
+      </div>
+    </div>`;
+  msg.innerHTML = `<div class="alert alert-${isDup ? "warning" : "success"} mb-0">${escapeHtml(res.message)}</div>`;
+}
+
+// ───────────────────────────────────────────────────────────────
+// 랙 크기 선택 (50칸 / 100칸)
+// ───────────────────────────────────────────────────────────────
+function getDisplayPosition(lisOrder, size) {
+  const rack_no  = Math.floor((lisOrder - 1) / size) + 1;
+  const rack_pos = ((lisOrder - 1) % size) + 1;
+  return { rack_no, rack_pos };
+}
+
+function setRackSize(size) {
+  rackSize = size;
+  localStorage.setItem("rackSize", size);
+  const b50  = document.getElementById("rack50Btn");
+  const b100 = document.getElementById("rack100Btn");
+  if (b50)  b50.className  = `btn btn-sm ${size === 50  ? "btn-primary" : "btn-outline-secondary"}`;
+  if (b100) b100.className = `btn btn-sm ${size === 100 ? "btn-primary" : "btn-outline-secondary"}`;
+  currentDisplayRackNo = 1;
+  lastHighlightPos     = null;
+  if (planData) renderRackUI(planData, 1, null);
+}
+
+function initRackSizeButtons() {
+  const b50  = document.getElementById("rack50Btn");
+  const b100 = document.getElementById("rack100Btn");
+  if (b50)  b50.className  = `btn btn-sm ${rackSize === 50  ? "btn-primary" : "btn-outline-secondary"}`;
+  if (b100) b100.className = `btn btn-sm ${rackSize === 100 ? "btn-primary" : "btn-outline-secondary"}`;
+}
+
+// ───────────────────────────────────────────────────────────────
+// 랙 그리드 UI — 인라인 스타일로 직접 그림 (CSS 의존 안 함)
+// ───────────────────────────────────────────────────────────────
+function renderRackUI(data, rackNo, highlightPos) {
+  const rackArea  = document.getElementById("rackArea");
+  const rackEmpty = document.getElementById("rackEmpty");
+  if (!data || data.total === 0) {
+    rackArea.style.display  = "none";
+    if (rackEmpty) rackEmpty.style.display = "";
+    return;
+  }
+  rackArea.style.display  = "";
+  if (rackEmpty) rackEmpty.style.display = "none";
+
+  document.getElementById("rackTitle").textContent    = data.culture_type;
+  document.getElementById("rackSubtitle").textContent = `${data.done}/${data.total} 처리됨`;
+
+  const totalRacks = Math.max(1, Math.ceil(data.total / rackSize));
+  renderRackSelector(totalRacks, rackNo);
+
+  // lis_order 기준으로 현재 랙·위치 계산 (rackSize 적용)
+  const donePositions = new Set();
+  (data.done_list || []).forEach(r => {
+    if (r.lis_order) {
+      const dp = getDisplayPosition(r.lis_order, rackSize);
+      if (dp.rack_no === rackNo) donePositions.add(dp.rack_pos);
+    }
+  });
+
+  const container = document.getElementById("rackGrid");
+
+  // ── 고정 픽셀 그리드 (CSS 클래스 완전 배제 — aspect-ratio 충돌 방지) ──
+  const CELL = 24, GAP = 2;
+  // 컨테이너: 컬럼·행 모두 고정 px, align-items:stretch 해제
+  container.setAttribute("style",
+    `display:grid;grid-template-columns:repeat(10,${CELL}px);` +
+    `grid-auto-rows:${CELL}px;gap:${GAP}px;` +
+    `width:${10*CELL + 9*GAP}px;align-items:start;`
+  );
+
+  // 공통 셀 기본 스타일 (변하지 않는 부분)
+  const BASE =
+    `width:${CELL}px;height:${CELL}px;box-sizing:border-box;` +
+    `border-radius:3px;display:flex;align-items:center;justify-content:center;` +
+    `font-size:9px;font-weight:700;line-height:1;` +
+    `cursor:default;user-select:none;overflow:hidden;flex-shrink:0;`;
+
+  let html = "";
+  for (let i = 1; i <= rackSize; i++) {
+    const isDone   = donePositions.has(i);
+    const isActive = i === highlightPos;
+
+    const bg  = isActive ? "#fef08a" : isDone ? "#dcfce7" : "#f1f5f9";
+    const clr = isActive ? "#78350f" : isDone ? "#16a34a" : "#94a3b8";
+    const bd  = isActive ? "2px solid #f59e0b" : isDone ? "1px solid #bbf7d0" : "1px solid #e2e8f0";
+    const anim = isActive
+      ? "animation:rack-blink .55s ease-in-out infinite;transform:scale(1.05);" : "";
+
+    // ★ class 없음 — CSS rack-cell 규칙(aspect-ratio:1)이 개입하지 못하게
+    html += `<div data-pos="${i}" style="${BASE}` +
+      `background:${bg};color:${clr};border:${bd};${anim}">${i}</div>`;
+  }
+  container.innerHTML = html;
+
+  // 방금 스캔한 칸 4초 후 초록으로
+  if (highlightPos) {
+    const cell = container.querySelector(`[data-pos="${highlightPos}"]`);
+    if (cell) {
+      setTimeout(() => {
+        if (cell.parentElement) {
+          cell.style.animation  = "";
+          cell.style.transform  = "";
+          cell.style.background = "#dcfce7";
+          cell.style.color      = "#16a34a";
+          cell.style.border     = "1px solid #bbf7d0";
+        }
+        lastHighlightPos = null;
+      }, 4000);
+    }
+  }
+}
+
+function renderRackSelector(totalRacks, activeRack) {
+  const el = document.getElementById("rackSelector");
+  if (totalRacks <= 1) {
+    el.innerHTML = `<span class="badge text-bg-secondary">1번 랙</span>`;
+    return;
+  }
+  el.innerHTML = Array.from({length: totalRacks}, (_, i) => i + 1).map(n => `
+    <button class="btn btn-sm ${n === activeRack ? "btn-primary" : "btn-outline-secondary"}"
+            onclick="switchRack(${n})" type="button"
+            style="width:44px;padding-left:0;padding-right:0;text-align:center">${n}번</button>`).join("");
+}
+
+function switchRack(n) {
+  currentDisplayRackNo = n;
+  lastHighlightPos     = null;
+  renderRackUI(planData, n, null);
+}
+
+// ───────────────────────────────────────────────────────────────
+// 진행률 + 남은 예정 목록
+// ───────────────────────────────────────────────────────────────
+function updateProgress(data) {
+  if (!data) return;
+  const area = document.getElementById("microProgressArea");
+  area.style.display = data.total > 0 ? "" : "none";
+  if (!data.total) return;
+
+  const pct = Math.round(data.done / data.total * 100);
+  document.getElementById("progressCultureTitle").textContent = data.culture_type;
+  document.getElementById("progressBar").style.width = pct + "%";
+  document.getElementById("progressText").textContent  = pct + "%";
+  document.getElementById("cntTotal").textContent   = data.total;
+  document.getElementById("cntDone").textContent    = data.done;
+  document.getElementById("cntPending").textContent = data.pending;
+  document.getElementById("pendingBadge").textContent = data.pending_total ?? data.pending;
+
+  const tbody = document.getElementById("pendingRows");
+  if (!data.pending_list?.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary py-3">남은 예정 검체가 없습니다.</td></tr>`;
+  } else {
+    tbody.innerHTML = data.pending_list.map(r => `
+      <tr>
+        <td class="text-center fw-bold">${r.lis_order}</td>
+        <td class="font-monospace">${escapeHtml(r.accession_no)}</td>
+        <td>${escapeHtml(patientText(r))}</td>
+        <td class="text-start">${escapeHtml((r.test_names||[]).join(", "))}</td>
+        <td>${escapeHtml(r.specimen_name || "")}</td>
+      </tr>`).join("");
+  }
+}
+
+// ───────────────────────────────────────────────────────────────
+// 스캔 작업 목록 — 미생물 (소분류별 분리 표시)
+// ───────────────────────────────────────────────────────────────
+function renderMicroWorkList(assignments) {
+  const el = document.getElementById("subcategoryPages");
+  if (!assignments?.length) {
+    el.innerHTML = `
+      <div class="text-secondary text-center py-4" style="font-size:.88rem">
+        <i class="bi bi-inbox me-2"></i>오늘 처리된 미생물 소분류 검체가 없습니다.
+      </div>`;
+    document.getElementById("printPages").innerHTML = "";
+    return;
+  }
+
+  // culture_type별로 그룹핑 (cultureTypes 순서 유지)
+  const grouped = {};
+  cultureTypes.forEach(ct => { grouped[ct] = []; });
+  assignments.forEach(r => {
+    if (grouped[r.culture_type]) grouped[r.culture_type].push(r);
+    else grouped[r.culture_type] = [r];
+  });
+
+  let html = "";
+  for (const [ct, rows] of Object.entries(grouped)) {
+    if (!rows.length) continue;
+    // 각 소분류 내에서 스캔순(assigned_at) 역순
+    const sorted = [...rows].reverse();
+    html += `
+      <div class="sub-status-section mb-3">
+        <div class="sub-status-header">
+          <h3>${escapeHtml(ct)}
+            <span class="text-secondary fw-normal">(${sorted.length}건)</span>
+          </h3>
+        </div>
+        ${buildMicroTable(sorted)}
+      </div>`;
+  }
+  el.innerHTML = html;
+  document.getElementById("printPages").innerHTML = html;
+}
+
+function buildMicroTable(rows) {
+  const tbody = rows.map(r => `
+    <tr>
+      <td class="text-center">${r.scan_order}</td>
+      <td><span class="badge text-bg-secondary" style="font-size:.72rem">${escapeHtml(r.culture_type)}</span></td>
+      <td class="text-center fw-bold">${r.culture_order}</td>
+      <td class="text-center">${r.rack_no}</td>
+      <td class="text-center"><span class="location-code-badge">${r.rack_position}</span></td>
+      <td class="font-monospace fw-semibold">${escapeHtml(r.accession_no)}</td>
+      <td>${escapeHtml(patientText(r))}</td>
+      <td>${escapeHtml(r.hospital_name || "")}</td>
+      <td class="text-start">${escapeHtml((r.test_names||[]).join(", "))}</td>
+      <td>${escapeHtml(r.specimen_name || "")}</td>
+    </tr>`).join("");
+  return `<div class="table-responsive"><table class="compact-table">
+    <thead><tr>
+      <th style="width:52px">스캔순</th>
+      <th>소분류</th>
+      <th style="width:56px">순번</th>
+      <th style="width:44px">랙</th>
+      <th style="width:44px">칸</th>
+      <th>접수번호</th>
+      <th>성명/나이</th>
+      <th>병원명</th>
+      <th>검사명</th>
+      <th>검체명</th>
+    </tr></thead>
+    <tbody>${tbody}</tbody>
+  </table></div>`;
+}
+
+// ───────────────────────────────────────────────────────────────
+// 스캔 작업 목록 — 비미생물
+// ───────────────────────────────────────────────────────────────
+function renderPagedAssignments(rows) {
+  const visible = rows.filter(r => r.department_name === activeDept && r.subcategory === activeSubcat);
+  const pages = new Map();
+  visible.forEach(r => {
+    if (!pages.has(r.page_no)) pages.set(r.page_no, []);
+    pages.get(r.page_no).push(r);
+  });
+  groupedRows = {};
+  const target = document.getElementById("nmPages");
+  if (!pages.size) {
+    target.innerHTML = `
+      <div class="text-secondary text-center py-4" style="font-size:.88rem">
+        <i class="bi bi-inbox me-2"></i>${escapeHtml(activeDept)} / ${escapeHtml(activeSubcat)} 처리 내역이 없습니다.
+      </div>`;
+    document.getElementById("printPages").innerHTML = "";
+    return;
+  }
+  const html = [...pages.entries()].map(([pageNo, pageRows]) => {
+    const gKey = `${activeDept}||${activeSubcat}||${pageNo}`;
+    groupedRows[gKey] = pageRows;
+    return `
+      <div class="sub-status-section mb-3">
+        <div class="sub-status-header">
+          <h3>${escapeHtml(activeDept)} / ${escapeHtml(activeSubcat)}
+              <span class="text-secondary fw-normal">${pageNo}번 묶음</span></h3>
+          <div class="d-flex gap-2 align-items-center">
+            <span class="badge text-bg-secondary">${pageRows.length}/30</span>
+            <button class="btn btn-sm btn-success"
+              onclick="downloadExcel('${encodeURIComponent(activeDept)}','${encodeURIComponent(activeSubcat)}',${pageNo})">
+              <i class="bi bi-file-earmark-excel"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-primary" onclick="printGroup('${gKey}')">
+              <i class="bi bi-printer"></i>
+            </button>
+          </div>
+        </div>
+        ${buildNmTable(pageRows)}
+      </div>`;
+  }).join("");
+  target.innerHTML = html;
+  document.getElementById("printPages").innerHTML = html;
+}
+
+function buildNmTable(rows) {
+  const tbody = rows.map(r => `
+    <tr>
+      <td>${r.page_item_no}</td>
+      <td>${r.worklist_order || ""}</td>
+      <td class="font-monospace fw-semibold">${escapeHtml(r.accession_no)}</td>
+      <td>${escapeHtml(patientText(r))}</td>
+      <td>${escapeHtml(r.hospital_name || "")}</td>
+      <td class="text-start">${escapeHtml((r.test_names||[]).join(", "))}</td>
+      <td>${escapeHtml(r.specimen_name || "")}</td>
+      <td><span class="location-code-badge">${escapeHtml(r.location_code)}</span></td>
+    </tr>`).join("");
+  return `<div class="table-responsive"><table class="compact-table">
+    <thead><tr>
+      <th>번호</th><th>워크리스트</th><th>접수번호</th><th>성명/나이</th>
+      <th>병원명</th><th>검사명</th><th>검체명</th><th>위치번호</th>
+    </tr></thead>
+    <tbody>${tbody}</tbody>
+  </table></div>`;
+}
+
+// ───────────────────────────────────────────────────────────────
+// 데이터 로딩
+// ───────────────────────────────────────────────────────────────
+async function loadData() {
+  if (isMicro()) {
+    await Promise.all([
+      loadMicroPlans(activeSubcat),
+      loadCultureSummary(),
+      loadTodayAssignments(),
+    ]);
+  } else {
+    await loadAssignments();
+  }
+}
+
+async function loadMicroPlans(cultureType) {
+  try {
+    const data = await fetchJson(`/api/micro/culture-plans?culture_type=${encodeURIComponent(cultureType)}`);
+    planData = data;
+    updateProgress(data);
+    renderRackUI(data, currentDisplayRackNo, lastHighlightPos);
+  } catch (e) { console.error("loadMicroPlans:", e); }
+}
+
+async function loadCultureSummary() {
+  try {
+    const data = await fetchJson("/api/micro/culture-summary");
+    cultureSummary = {};
+    (data || []).forEach(s => { cultureSummary[s.culture_type] = s; });
+    renderSubcatList(activeDept, activeSubcat);
+  } catch (e) { console.error("loadCultureSummary:", e); }
+}
+
+async function loadTodayAssignments() {
+  try {
+    const data = await fetchJson("/api/micro/today-assignments");
+    renderMicroWorkList(data);
+  } catch (e) { console.error("loadTodayAssignments:", e); }
+}
+
+async function loadAssignments() {
+  try {
+    const rows = await fetchJson("/api/micro/subcategory-assignments");
+    latestRows = rows;
+    renderPagedAssignments(rows);
+  } catch (e) { console.error("loadAssignments:", e); }
+}
+
+// ───────────────────────────────────────────────────────────────
+// 유틸
+// ───────────────────────────────────────────────────────────────
+function patientText(r) {
+  const n = r.patient_name || "", a = r.patient_age || "";
+  return n && a ? `${n} / ${a}세` : n || a || "";
+}
+
+function downloadCurrentExcel() {
+  if (isMicro()) {
+    // 미생물은 전체 내보내기
+    downloadExcel(encodeURIComponent("미생물"), null, null);
+  } else {
+    downloadExcel(encodeURIComponent(activeDept), encodeURIComponent(activeSubcat), null);
+  }
+}
+
+async function downloadExcel(dept, subcat, pageNo) {
+  let url = "/api/micro/subcategory-assignments/export";
+  const p = new URLSearchParams();
+  if (dept)   p.set("department_name", decodeURIComponent(dept));
+  if (subcat) p.set("subcategory",     decodeURIComponent(subcat));
+  if (pageNo) p.set("page_no",         pageNo);
+  const qs = p.toString();
+  if (qs) url += "?" + qs;
+  const res = await fetch(url);
+  if (!res.ok) { showToast("오류", "엑셀 다운로드 실패", "danger"); return; }
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `subdivision_${decodeURIComponent(dept||"")}${subcat?"_"+decodeURIComponent(subcat):""}${pageNo?"_"+pageNo:""}.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
+function printGroup(gKey) {
+  const rows = groupedRows[gKey] || [];
+  const [dept, subcat, pageNo] = gKey.split("||");
+  document.getElementById("printPages").innerHTML = `
+    <section>
+      <h2 style="font-size:14px">${escapeHtml(dept)} / ${escapeHtml(subcat)} — ${pageNo}번 묶음 (${rows.length}건)</h2>
+      ${buildNmTable(rows)}
+    </section>`;
+  window.print();
+}
+function printCurrent() { window.print(); }
+
+// ───────────────────────────────────────────────────────────────
+// 초기화
+// ───────────────────────────────────────────────────────────────
+renderDeptList();
+renderSubcatList(activeDept, activeSubcat);
+updateLayoutVisibility();
+initRackSizeButtons();
+if (!isMicro()) updateNonMicroDisplay();
+loadData();
+setInterval(loadData, 8000);
+</script>
+{% endblock %}

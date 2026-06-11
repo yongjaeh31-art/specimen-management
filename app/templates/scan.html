@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}검체 조회/도착처리{% endblock %}
+{% block content %}
+<div class="row g-3">
+
+  <!-- 스캔 패널 -->
+  <div class="col-12 col-xl-4">
+    <div class="page-panel sticky-top-panel no-print">
+      <div class="panel-header">
+        <div class="panel-icon"><i class="bi bi-upc-scan"></i></div>
+        <h1>검체 조회 / 도착처리</h1>
+      </div>
+
+      <label class="form-label fw-semibold">카테고리 선택</label>
+      <select id="category" class="form-select mb-3">
+        {% for cat in categories %}
+        <option value="{{ cat }}">{{ cat }}</option>
+        {% endfor %}
+      </select>
+
+      <div class="row g-2 mb-3">
+        <div class="col-6">
+          <label class="form-label fw-semibold">확인자</label>
+          <input id="operatorName" class="form-control" autocomplete="off" placeholder="이름">
+        </div>
+        <div class="col-6">
+          <label class="form-label fw-semibold">확인 PC</label>
+          <input id="workstationName" class="form-control" autocomplete="off" placeholder="SCAN-PC-1">
+        </div>
+      </div>
+
+      <label class="form-label fw-semibold d-flex align-items-center gap-2">
+        바코드 스캔
+        <span><span class="scan-status-dot ready" id="scanDot"></span><span id="scanStatusText" class="small text-secondary">대기 중</span></span>
+      </label>
+      <div class="scan-input-wrap mb-2">
+        <input id="barcode" class="form-control scan-input" autofocus autocomplete="off"
+               placeholder="스캔 또는 Enter 입력">
+      </div>
+      <div class="form-text">
+        <i class="bi bi-info-circle me-1"></i>
+        <strong>조회만</strong> 선택 시 도착처리 없이 검사정보만 표시합니다. 로그인 없이도 사용 가능합니다.
+      </div>
+
+      <div id="scanMessage" class="mt-3"></div>
+
+      <!-- 최근 스캔 이력 -->
+      <div class="mt-4">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="fw-semibold" style="font-size:.82rem;color:var(--gray-600)">
+            <i class="bi bi-clock-history me-1"></i>최근 스캔
+          </span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="clearHistory()" style="font-size:.75rem;padding:2px 8px">지우기</button>
+        </div>
+        <div id="scanHistory" class="d-flex flex-column gap-1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 결과 패널 -->
+  <div class="col-12 col-xl-8">
+    <div id="scanResult" class="result-empty">
+      <div>
+        <i class="bi bi-upc-scan"></i>
+        <div>검체 바코드를 스캔하거나 입력하면<br>결과가 여기에 표시됩니다.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
+
+const operatorInput    = document.getElementById("operatorName");
+const workstationInput = document.getElementById("workstationName");
+const scanDot          = document.getElementById("scanDot");
+const scanStatusText   = document.getElementById("scanStatusText");
+
+operatorInput.value    = currentUser?.display_name || localStorage.getItem("operatorName") || "";
+workstationInput.value = localStorage.getItem("workstationName") || "SCAN-PC-1";
+operatorInput.addEventListener("input",    () => localStorage.setItem("operatorName",    operatorInput.value.trim()));
+workstationInput.addEventListener("input", () => localStorage.setItem("workstationName", workstationInput.value.trim()));
+
+let scanTimer = null, scanBusy = false, scanStartedAt = 0, scanLastLength = 0;
+const history = [];
+
+function setScanState(state) {
+  if (state === "busy") {
+    scanDot.className = "scan-status-dot busy";
+    scanStatusText.textContent = "처리 중…";
+  } else {
+    scanDot.className = "scan-status-dot ready";
+    scanStatusText.textContent = "대기 중";
+  }
+}
+
+function looksLikeScanner(input) {
+  return input.value.trim().length >= 6 && Date.now() - scanStartedAt <= 700;
+}
+
+async function submitBarcode(input) {
+  const accessionNo = input.value.trim();
+  if (!accessionNo || scanBusy) return;
+  scanBusy = true;
+  input.value = "";
+  setScanState("busy");
+
+  const category = document.getElementById("category").value;
+  try {
+    const data = await postJson("/api/scan", {
+      accession_no:   accessionNo,
+      specimen_category: category,
+      client_name:    navigator.userAgent.slice(0, 100),
+      operator_name:  operatorInput.value.trim(),
+      workstation_name: workstationInput.value.trim(),
+    });
+    renderScanResult(data);
+    addHistory(accessionNo, data);
+    showToast(
+      data.arrived ? "도착처리 완료" : "조회 완료",
+      data.message,
+      data.order_found ? "success" : "warning"
+    );
+    document.getElementById("scanMessage").innerHTML = "";
+  } catch (err) {
+    document.getElementById("scanMessage").innerHTML =
+      `<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>${escapeHtml(err.message)}</div>`;
+    showToast("오류", err.message, "danger");
+  } finally {
+    scanBusy = false;
+    setScanState("ready");
+    input.focus();
+  }
+}
+
+document.getElementById("barcode").addEventListener("input", e => {
+  const input = e.target;
+  const len   = input.value.length;
+  if (len <= 1 || len < scanLastLength) scanStartedAt = Date.now();
+  scanLastLength = len;
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(() => { if (looksLikeScanner(input)) submitBarcode(input); }, 220);
+});
+
+document.getElementById("barcode").addEventListener("keydown", async e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  clearTimeout(scanTimer);
+  await submitBarcode(e.target);
+  scanStartedAt = 0; scanLastLength = 0;
+});
+
+function addHistory(accessionNo, data) {
+  history.unshift({ accessionNo, status: data.status, arrived: data.arrived, order_found: data.order_found, ts: new Date() });
+  if (history.length > 8) history.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const el = document.getElementById("scanHistory");
+  if (!history.length) { el.innerHTML = ""; return; }
+  el.innerHTML = history.map(h => {
+    const color = h.arrived ? "success" : h.order_found ? "secondary" : "warning";
+    const icon  = h.arrived ? "check2-all" : h.order_found ? "eye" : "question-circle";
+    return `
+      <div class="d-flex align-items-center gap-2 p-2" style="border-radius:6px;background:var(--gray-50);font-size:.8rem">
+        <i class="bi bi-${icon} text-${color}"></i>
+        <span class="fw-semibold font-monospace">${escapeHtml(h.accessionNo)}</span>
+        <span class="ms-auto text-secondary">${h.ts.toLocaleTimeString("ko-KR", {hour12:false})}</span>
+      </div>`;
+  }).join("");
+}
+
+function clearHistory() {
+  history.length = 0;
+  renderHistory();
+}
+</script>
+{% endblock %}
