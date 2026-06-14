@@ -1,9 +1,13 @@
+from datetime import date
 from io import BytesIO
+from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.pagebreak import Break
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -133,6 +137,133 @@ def subcategory_scan(request: SubdivisionScanRequest, db: Session = Depends(get_
 @router.get("/subcategory-assignments")
 def subcategory_assignments(db: Session = Depends(get_db)):
     return combined_assignments(db)
+
+
+@router.get("/worklist/export")
+def export_worklist(db: Session = Depends(get_db)):
+    """오늘 스캔 완료 목록 → 미생물 연관검사 워크리스트 (소분류별 시트, 25행/페이지, A4 가로)"""
+    assignments = get_today_micro_assignments(db)
+    today_str = date.today().strftime("%Y-%m-%d")
+
+    # 소분류별 그룹핑
+    groups: dict[str, list] = {}
+    for row in assignments:
+        groups.setdefault(row["culture_type"], []).append(row)
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    thin = Side(style="thin", color="BBBBBB")
+    cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    COL_NAMES = ["순번", "접수번호", "성명 (성별/나이)", "병원명", "검사명", "검체명"]
+    COL_WIDTHS = [5, 13, 16, 20, 38, 14]  # 가로 A4 기준
+    NCOLS = len(COL_NAMES)
+    DATA_PER_PAGE = 25
+    HEADER_ROWS = 3  # 타이틀 + 날짜/페이지 + 컬럼헤더
+
+    if not groups:
+        ws = wb.create_sheet("미생물 워크리스트")
+        ws.cell(1, 1, "오늘 처리된 미생물 소분류 검체가 없습니다.")
+    else:
+        for ct, rows in groups.items():
+            ws = wb.create_sheet(_safe_sheet_name(ct)[:31])
+
+            # A4 가로 인쇄 설정
+            ws.page_setup.paperSize = 9
+            ws.page_setup.orientation = "landscape"
+            ws.page_setup.fitToPage = True
+            ws.page_setup.fitToWidth = 1
+            ws.page_setup.fitToHeight = 0
+            ws.page_margins.left = 0.5
+            ws.page_margins.right = 0.5
+            ws.page_margins.top = 0.7
+            ws.page_margins.bottom = 0.7
+
+            for i, w in enumerate(COL_WIDTHS, 1):
+                ws.column_dimensions[get_column_letter(i)].width = w
+
+            total_pages = ceil(len(rows) / DATA_PER_PAGE)
+            title_fill = PatternFill("solid", fgColor="1E3A5F")
+            hdr_fill = PatternFill("solid", fgColor="D9EAF7")
+
+            for pg in range(total_pages):
+                page_rows = rows[pg * DATA_PER_PAGE : (pg + 1) * DATA_PER_PAGE]
+                base = pg * (HEADER_ROWS + DATA_PER_PAGE) + 1  # 1-indexed
+
+                # 행1: 메인 타이틀
+                ws.merge_cells(start_row=base, start_column=1, end_row=base, end_column=NCOLS)
+                tc = ws.cell(base, 1, "미생물 연관검사 워크리스트")
+                tc.font = Font(name="굴림", size=16, bold=True, color="FFFFFF")
+                tc.fill = title_fill
+                tc.alignment = Alignment(horizontal="center", vertical="center")
+                ws.row_dimensions[base].height = 26
+
+                # 행2: 소분류명(좌) + 접수일자(중) + 페이지(우)
+                info_row = base + 1
+                ws.merge_cells(start_row=info_row, start_column=1, end_row=info_row, end_column=2)
+                c = ws.cell(info_row, 1, ct)
+                c.font = Font(name="굴림", size=9, bold=True)
+                c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+
+                ws.merge_cells(start_row=info_row, start_column=3, end_row=info_row, end_column=4)
+                c = ws.cell(info_row, 3, f"접수일자 :   {today_str}  ~  {today_str}")
+                c.font = Font(name="굴림", size=9)
+                c.alignment = Alignment(horizontal="center", vertical="center")
+
+                ws.merge_cells(start_row=info_row, start_column=5, end_row=info_row, end_column=NCOLS)
+                c = ws.cell(info_row, 5, f"페이지 : {pg + 1} of {total_pages}")
+                c.font = Font(name="굴림", size=9)
+                c.alignment = Alignment(horizontal="right", vertical="center", indent=1)
+                ws.row_dimensions[info_row].height = 15
+
+                # 행3: 컬럼 헤더
+                hdr_row = base + 2
+                for ci, h in enumerate(COL_NAMES, 1):
+                    c = ws.cell(hdr_row, ci, h)
+                    c.font = Font(name="굴림", size=8, bold=True)
+                    c.fill = hdr_fill
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                    c.border = cell_border
+                ws.row_dimensions[hdr_row].height = 16
+
+                # 데이터 행
+                for i, row in enumerate(page_rows):
+                    dr = base + HEADER_ROWS + i
+                    seq = pg * DATA_PER_PAGE + i + 1
+                    alt_fill = PatternFill("solid", fgColor=("FFFFFF" if i % 2 == 0 else "EBF4FB"))
+                    vals = [
+                        seq,
+                        row.get("accession_no", ""),
+                        _patient_text(row),
+                        row.get("hospital_name") or "",
+                        ", ".join(row.get("test_names") or []),
+                        row.get("specimen_name") or "",
+                    ]
+                    for ci, val in enumerate(vals, 1):
+                        c = ws.cell(dr, ci, val)
+                        c.font = Font(name="굴림", size=8, bold=(ci == 2))
+                        c.fill = alt_fill
+                        c.border = cell_border
+                        c.alignment = Alignment(
+                            horizontal="center" if ci <= 2 else "left",
+                            vertical="center",
+                        )
+                    ws.row_dimensions[dr].height = 14
+
+                # 페이지 나누기 (마지막 페이지 제외)
+                if pg < total_pages - 1:
+                    last_dr = base + HEADER_ROWS + len(page_rows) - 1
+                    ws.row_breaks.append(Break(id=last_dr))
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    fname = f"micro_worklist_{date.today().strftime('%Y%m%d')}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
 
 
 @router.get("/subcategory-assignments/export")

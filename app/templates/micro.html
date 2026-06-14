@@ -187,7 +187,10 @@
         </div>
         <div class="d-flex gap-2">
           <button class="btn btn-sm btn-success" onclick="downloadCurrentExcel()">
-            <i class="bi bi-file-earmark-excel me-1"></i>엑셀
+            <i class="bi bi-file-earmark-excel me-1"></i>소분류
+          </button>
+          <button class="btn btn-sm btn-success" onclick="downloadWorklist()" title="미생물 연관검사 워크리스트 출력용 Excel">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i>워크리스트
           </button>
           <button class="btn btn-sm btn-outline-primary" onclick="printCurrent()">
             <i class="bi bi-printer me-1"></i>출력
@@ -1216,10 +1219,26 @@ function patientText(r) {
 
 function downloadCurrentExcel() {
   if (isMicro()) {
-    // 미생물은 전체 내보내기
     downloadExcel(encodeURIComponent("미생물"), null, null);
   } else {
     downloadExcel(encodeURIComponent(activeDept), encodeURIComponent(activeSubcat), null);
+  }
+}
+
+async function downloadWorklist() {
+  showToast("준비 중", "워크리스트 Excel 생성 중...", "info");
+  try {
+    const res = await fetch("/api/micro/worklist/export");
+    if (!res.ok) { showToast("오류", "워크리스트 다운로드 실패", "danger"); return; }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `micro_worklist_${new Date().toISOString().slice(0,10).replace(/-/g,"")}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+    showToast("완료", "워크리스트 Excel 다운로드 완료", "success");
+  } catch (e) {
+    showToast("오류", "워크리스트 다운로드 실패", "danger");
   }
 }
 
