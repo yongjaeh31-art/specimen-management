@@ -744,23 +744,28 @@ function renderAutoMicroResult(res) {
       </div>
 
       <!-- 환자 / 검사 정보 그리드 -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.82rem">
-        <div style="background:rgba(255,255,255,.7);border-radius:6px;padding:8px 10px">
-          <div style="font-size:.66rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">접수번호</div>
-          <div style="font-weight:700;font-family:monospace;font-size:.92rem">${escapeHtml(res.accession_no)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+
+        <!-- 접수번호: 가장 크고 선명하게 (전체 2칸) -->
+        <div style="grid-column:1/-1;background:#fff;border-radius:8px;padding:10px 14px;
+                    border-left:4px solid ${accentColor}">
+          <div style="font-size:.68rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">접수번호</div>
+          <div style="font-weight:900;font-family:monospace;font-size:1.6rem;color:#0f172a;letter-spacing:.04em;line-height:1">${escapeHtml(res.accession_no)}</div>
         </div>
-        <div style="background:rgba(255,255,255,.7);border-radius:6px;padding:8px 10px">
-          <div style="font-size:.66rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">환자 / 나이</div>
-          <div style="font-weight:600">${escapeHtml(patientText(res))}</div>
+
+        <div style="background:#fff;border-radius:8px;padding:9px 12px">
+          <div style="font-size:.68rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">환자 / 나이</div>
+          <div style="font-weight:800;font-size:1rem;color:#0f172a">${escapeHtml(patientText(res))}</div>
         </div>
-        <div style="background:rgba(255,255,255,.7);border-radius:6px;padding:8px 10px">
-          <div style="font-size:.66rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">검사명</div>
-          <div style="font-weight:600;word-break:keep-all">${escapeHtml((res.test_names||[]).join(", "))}</div>
+        <div style="background:#fff;border-radius:8px;padding:9px 12px">
+          <div style="font-size:.68rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">검체명</div>
+          <div style="font-weight:800;font-size:1rem;color:#0f172a">${escapeHtml(res.specimen_name||"")}</div>
         </div>
-        <div style="background:rgba(255,255,255,.7);border-radius:6px;padding:8px 10px">
-          <div style="font-size:.66rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">검체명</div>
-          <div style="font-weight:600">${escapeHtml(res.specimen_name||"")}</div>
+        <div style="grid-column:1/-1;background:#fff;border-radius:8px;padding:9px 12px">
+          <div style="font-size:.68rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">검사명</div>
+          <div style="font-weight:700;font-size:.95rem;color:#1e293b;word-break:keep-all">${escapeHtml((res.test_names||[]).join(", "))}</div>
         </div>
+
       </div>
     </div>`;
 
