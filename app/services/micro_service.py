@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models import CultureRule, MicroCultureAssignment, MicroCulturePlan, Order, OrderTest, ScanLog, SpecimenArrival
@@ -9,9 +9,11 @@ RACK_SIZE = 50  # 50칸 스폰지랙
 
 
 def _today_start() -> datetime:
-    """오늘 날짜 00:00:00 (로컬 시간 기준)"""
-    d = date.today()
-    return datetime(d.year, d.month, d.day)
+    """오늘 KST 00:00 → UTC naive (SQLite func.now()는 UTC 저장)
+    DB 비교: KST 자정 = UTC 전날 15:00 → 오전 9시 이전 스캔도 오늘로 인식"""
+    d = date.today()  # 한국 로컬 날짜
+    kst_midnight = datetime(d.year, d.month, d.day)
+    return kst_midnight - timedelta(hours=9)  # KST → UTC
 
 
 # ──────────────────────────────────────────────────────────────────────────────
