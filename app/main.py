@@ -126,6 +126,11 @@ def micro_page(request: Request):
     )
 
 
+@app.get("/urine", response_class=HTMLResponse)
+def urine_page(request: Request):
+    return templates.TemplateResponse("urine.html", {"request": request})
+
+
 @app.get("/missing", response_class=HTMLResponse)
 def missing_page(request: Request):
     return templates.TemplateResponse("missing.html", {"request": request})

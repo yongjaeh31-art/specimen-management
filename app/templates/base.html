@@ -49,6 +49,11 @@
       </a>
     </li>
     <li class="nav-item">
+      <a class="nav-link {% if request.url.path == '/urine' %}active{% endif %}" href="/urine">
+        <i class="bi bi-droplet-fill"></i>Urine 출력
+      </a>
+    </li>
+    <li class="nav-item">
       <a class="nav-link {% if request.url.path == '/find' %}active{% endif %}" href="/find">
         <i class="bi bi-search"></i>검체 찾기
       </a>
@@ -85,18 +90,22 @@
 <script>
 (function () {
   const user = JSON.parse(localStorage.getItem("currentUser") || "null");
+  // 로그인 필수: 미인증 시 로그인 페이지로 이동 (관리자 승인 페이지는 예외)
+  if (!user && window.location.pathname !== "/admin/users") {
+    window.location.replace("/login");
+    return;
+  }
   const badge = document.getElementById("currentUserBadge");
   const nameEl = document.getElementById("currentUserName");
   const loginLink = document.getElementById("loginLink");
   const logoutBtn = document.getElementById("logoutButton");
-  if (user) {
-    badge.classList.remove("d-none");
-    nameEl.textContent = user.display_name;
-    loginLink.classList.add("d-none");
-    logoutBtn.classList.remove("d-none");
-  }
+  badge.classList.remove("d-none");
+  nameEl.textContent = user.display_name;
+  loginLink.classList.add("d-none");
+  logoutBtn.classList.remove("d-none");
   logoutBtn.addEventListener("click", () => {
     localStorage.removeItem("currentUser");
+    localStorage.removeItem("pcName");
     window.location.href = "/login";
   });
 })();

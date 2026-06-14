@@ -178,6 +178,15 @@ class DepartmentSubcategoryRule(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class RegisteredPC(Base):
+    __tablename__ = "registered_pcs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pc_name: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    registered_by: Mapped[str | None] = mapped_column(String(80))
+
+
 class DepartmentSubcategoryAssignment(Base):
     __tablename__ = "department_subcategory_assignments"
     __table_args__ = (

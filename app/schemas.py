@@ -115,3 +115,8 @@ class ApproveUserRequest(BaseModel):
 
 class AdminPasswordRequest(BaseModel):
     admin_password: str
+
+
+class PCRegisterRequest(BaseModel):
+    pc_name: str
+    registered_by: str | None = None
