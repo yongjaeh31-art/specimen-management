@@ -141,25 +141,28 @@ def subcategory_assignments(db: Session = Depends(get_db)):
 
 @router.get("/worklist/export")
 def export_worklist(db: Session = Depends(get_db)):
-    """오늘 스캔 완료 목록 → 미생물 연관검사 워크리스트 (소분류별 시트, 25행/페이지, A4 가로)"""
+    """오늘 스캔 완료 목록 → {소분류} 워크리스트 (소분류별 시트, 25행/페이지, A4 가로, LIS순 정렬)"""
     assignments = get_today_micro_assignments(db)
     today_str = date.today().strftime("%Y-%m-%d")
 
-    # 소분류별 그룹핑
+    # 소분류별 그룹핑 후 각 그룹 내 culture_order(LIS순) 오름차순 정렬
     groups: dict[str, list] = {}
     for row in assignments:
         groups.setdefault(row["culture_type"], []).append(row)
+    for ct in groups:
+        groups[ct].sort(key=lambda r: r.get("culture_order") or 0)
 
     wb = Workbook()
     wb.remove(wb.active)
 
     thin = Side(style="thin", color="BBBBBB")
     cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    bottom_only = Border(bottom=Side(style="thin", color="999999"))
     COL_NAMES = ["순번", "접수번호", "성명 (성별/나이)", "병원명", "검사명", "검체명"]
-    COL_WIDTHS = [5, 13, 16, 20, 38, 14]  # 가로 A4 기준
+    COL_WIDTHS = [5, 13, 16, 20, 38, 14]
     NCOLS = len(COL_NAMES)
     DATA_PER_PAGE = 25
-    HEADER_ROWS = 3  # 타이틀 + 날짜/페이지 + 컬럼헤더
+    HEADER_ROWS = 3  # 타이틀 + 날짜/페이지행 + 컬럼헤더
 
     if not groups:
         ws = wb.create_sheet("미생물 워크리스트")
@@ -183,38 +186,32 @@ def export_worklist(db: Session = Depends(get_db)):
                 ws.column_dimensions[get_column_letter(i)].width = w
 
             total_pages = ceil(len(rows) / DATA_PER_PAGE)
-            title_fill = PatternFill("solid", fgColor="1E3A5F")
             hdr_fill = PatternFill("solid", fgColor="D9EAF7")
 
             for pg in range(total_pages):
                 page_rows = rows[pg * DATA_PER_PAGE : (pg + 1) * DATA_PER_PAGE]
                 base = pg * (HEADER_ROWS + DATA_PER_PAGE) + 1  # 1-indexed
 
-                # 행1: 메인 타이틀
+                # 행1: "{소분류명} 워크리스트" — 배경 없음, 검정 굵은 텍스트, 가운데 정렬
                 ws.merge_cells(start_row=base, start_column=1, end_row=base, end_column=NCOLS)
-                tc = ws.cell(base, 1, "미생물 연관검사 워크리스트")
-                tc.font = Font(name="굴림", size=16, bold=True, color="FFFFFF")
-                tc.fill = title_fill
+                tc = ws.cell(base, 1, f"{ct} 워크리스트")
+                tc.font = Font(name="굴림", size=14, bold=True)
                 tc.alignment = Alignment(horizontal="center", vertical="center")
-                ws.row_dimensions[base].height = 26
+                tc.border = bottom_only
+                ws.row_dimensions[base].height = 24
 
-                # 행2: 소분류명(좌) + 접수일자(중) + 페이지(우)
+                # 행2: 접수일자(좌) + 페이지(우)
                 info_row = base + 1
-                ws.merge_cells(start_row=info_row, start_column=1, end_row=info_row, end_column=2)
-                c = ws.cell(info_row, 1, ct)
-                c.font = Font(name="굴림", size=9, bold=True)
-                c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-
-                ws.merge_cells(start_row=info_row, start_column=3, end_row=info_row, end_column=4)
-                c = ws.cell(info_row, 3, f"접수일자 :   {today_str}  ~  {today_str}")
+                ws.merge_cells(start_row=info_row, start_column=1, end_row=info_row, end_column=4)
+                c = ws.cell(info_row, 1, f"접수일자 :   {today_str}  ~  {today_str}")
                 c.font = Font(name="굴림", size=9)
-                c.alignment = Alignment(horizontal="center", vertical="center")
+                c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
 
                 ws.merge_cells(start_row=info_row, start_column=5, end_row=info_row, end_column=NCOLS)
                 c = ws.cell(info_row, 5, f"페이지 : {pg + 1} of {total_pages}")
                 c.font = Font(name="굴림", size=9)
                 c.alignment = Alignment(horizontal="right", vertical="center", indent=1)
-                ws.row_dimensions[info_row].height = 15
+                ws.row_dimensions[info_row].height = 14
 
                 # 행3: 컬럼 헤더
                 hdr_row = base + 2
