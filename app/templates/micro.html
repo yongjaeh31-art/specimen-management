@@ -68,22 +68,22 @@
         </div>
       </div>
 
-      <!-- 결과 카드: 나머지 공간 (최대 폭 제한) -->
-      <div style="flex:1;min-width:200px;max-width:420px">
+      <!-- 결과 카드: 나머지 공간 (최소 280px, 최대 440px) -->
+      <div style="flex:1.2;min-width:280px;max-width:440px">
         <div id="subdivisionResult"
-             style="height:100%;min-height:220px;border-radius:10px;border:2px dashed var(--border);
+             style="height:100%;min-height:240px;border-radius:12px;border:2px dashed var(--border);
                     background:#fff;display:flex;align-items:center;justify-content:center;
-                    color:var(--gray-400);text-align:center;padding:24px;font-size:.88rem">
+                    color:var(--gray-400);text-align:center;padding:24px;font-size:.9rem">
           <div>
-            <i class="bi bi-qr-code-scan" style="font-size:2.2rem;display:block;margin-bottom:10px;color:var(--gray-300)"></i>
+            <i class="bi bi-qr-code-scan" style="font-size:2.8rem;display:block;margin-bottom:12px;color:var(--gray-300)"></i>
             검체를 스캔하면 소분류와 랙 위치를 알려드립니다.
           </div>
         </div>
       </div>
 
-      <!-- 랙 UI — 콘텐츠 너비에 맞춤 (flex-shrink:0, 고정 너비) -->
-      <div style="flex-shrink:0">
-        <div class="page-panel h-100" style="min-height:220px;width:290px">
+      <!-- 랙 UI — 나머지 공간 전부 차지 (데스크탑 최적화) -->
+      <div style="flex:1;min-width:380px">
+        <div class="page-panel h-100" style="min-height:240px">
 
           <!-- 스캔 전 안내 -->
           <div id="rackEmpty"
@@ -113,15 +113,15 @@
             </div>
 
             <!-- 범례 -->
-            <div class="d-flex gap-2 mb-2" style="font-size:.68rem">
-              <span style="display:inline-flex;align-items:center;gap:3px;color:#64748b">
-                <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#f1f5f9;border:1px solid #e2e8f0"></span>미처리
+            <div class="d-flex gap-3 mb-2" style="font-size:.72rem;font-weight:600">
+              <span style="display:inline-flex;align-items:center;gap:4px;color:#64748b">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#e2e8f0;border:1px solid #cbd5e1"></span>미처리
               </span>
-              <span style="display:inline-flex;align-items:center;gap:3px;color:#64748b">
-                <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#dcfce7;border:1px solid #bbf7d0"></span>완료
+              <span style="display:inline-flex;align-items:center;gap:4px;color:#16a34a">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#16a34a"></span>완료
               </span>
-              <span style="display:inline-flex;align-items:center;gap:3px;color:#64748b">
-                <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#fef08a;border:1px solid #f59e0b"></span>방금
+              <span style="display:inline-flex;align-items:center;gap:4px;color:#ea580c">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#f97316"></span>방금
               </span>
             </div>
 
@@ -393,25 +393,41 @@ function renderSubcatList(dept, selSubcat) {
   document.getElementById("subcatList").innerHTML = items.map(item => {
     const icon  = subcatIcons[item] || "bi-grid";
     const desc  = subcatDesc[item]  || "소분류 검사";
+    const isActive = item === selSubcat;
+    const col = isMicroMode ? getCultureColor(item) : null;
+
     let badge = "";
     if (isMicroMode) {
       const s = cultureSummary[item] || {};
       if (s.total > 0) {
         const allDone = s.done === s.total;
-        badge = `<span class="badge ms-1 ${allDone ? 'text-bg-success' : 'text-bg-warning'}"
-                       style="font-size:.7rem">${s.done}/${s.total}</span>`;
+        const badgeBg = allDone ? "#16a34a" : col?.badge || "#f59e0b";
+        badge = `<span style="margin-left:auto;padding:2px 8px;border-radius:20px;
+                              background:${badgeBg};color:#fff;font-size:.75rem;font-weight:700;
+                              white-space:nowrap">${s.done}/${s.total}</span>`;
       }
     }
+
+    // 미생물: 활성 시 culture type 고유색 배경
+    const activeBg    = col && isActive ? col.light  : "";
+    const activeBorder= col && isActive ? `2px solid ${col.badge}` : "";
+    const activeStyle = isActive
+      ? (col ? `background:${activeBg};border:${activeBorder};` : "")
+      : "";
+
     return `
-      <button class="subcat-btn ${item === selSubcat ? 'active' : ''}"
-              data-subcat="${escapeHtml(item)}" type="button">
-        <span class="subcat-icon"><i class="bi ${icon}"></i></span>
+      <button class="subcat-btn ${isActive ? 'active' : ''}"
+              data-subcat="${escapeHtml(item)}" type="button"
+              style="${activeStyle}">
+        <span class="subcat-icon" style="${col && isActive ? `color:${col.hdr}` : ''}">
+          <i class="bi ${icon}"></i>
+        </span>
         <span class="subcat-text">
-          <strong>${escapeHtml(item)}</strong>
+          <strong style="${col && isActive ? `color:${col.hdr}` : ''}">${escapeHtml(item)}</strong>
           <small>${escapeHtml(desc)}</small>
         </span>
         ${badge}
-        <i class="bi bi-chevron-right" style="color:var(--gray-300);font-size:.8rem"></i>
+        <i class="bi bi-chevron-right" style="color:var(--gray-300);font-size:.8rem;margin-left:${badge ? '4px' : 'auto'}"></i>
       </button>`;
   }).join("");
 
@@ -706,23 +722,25 @@ function renderAutoMicroResult(res) {
       </div>
 
       <!-- 랙 번호 · 칸 번호 크게 표시 -->
-      <div style="display:flex;gap:12px;align-items:stretch;margin-bottom:14px">
-        <div style="flex:1;text-align:center;background:rgba(0,0,0,.05);border-radius:10px;padding:18px 12px">
-          <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-bottom:6px">랙 번호</div>
-          <div style="font-size:3.8rem;font-weight:900;line-height:1;color:${accentColor}">${dispRack}</div>
+      <div style="display:flex;gap:10px;align-items:stretch;margin-bottom:12px">
+        <div style="flex:1;text-align:center;background:rgba(0,0,0,.06);border-radius:12px;padding:16px 10px">
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#94a3b8;margin-bottom:4px">랙 번호</div>
+          <div style="font-size:4.5rem;font-weight:900;line-height:1;color:${accentColor}">${dispRack}</div>
         </div>
-        <div style="flex:2;text-align:center;background:${accentColor};border-radius:10px;padding:18px 12px">
-          <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:rgba(255,255,255,.75);margin-bottom:6px">칸 번호</div>
-          <div style="font-size:3.8rem;font-weight:900;line-height:1;color:#fff">${dispPos}</div>
+        <div style="flex:2;text-align:center;background:${accentColor};border-radius:12px;padding:16px 10px;
+                    box-shadow:0 4px 16px ${accentColor}60">
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:rgba(255,255,255,.8);margin-bottom:4px">칸 번호</div>
+          <div style="font-size:4.5rem;font-weight:900;line-height:1;color:#fff">${dispPos}</div>
         </div>
       </div>
 
       <!-- 안내 문구 -->
-      <div style="text-align:center;font-size:1rem;font-weight:800;color:${textColor};
-                  background:rgba(255,255,255,.6);border-radius:8px;padding:10px;margin-bottom:14px">
+      <div style="text-align:center;font-size:1.05rem;font-weight:800;color:${textColor};
+                  background:rgba(255,255,255,.65);border-radius:8px;padding:10px 14px;margin-bottom:12px;
+                  letter-spacing:-.01em">
         ${isDup
           ? "이미 처리된 검체입니다"
-          : `${dispRack}번 랙 &nbsp;·&nbsp; <strong style="font-size:1.15rem">${dispPos}번 칸</strong>에 꽂으세요`}
+          : `<span style="font-size:1.3rem">${dispRack}번 랙</span> &nbsp;·&nbsp; <span style="font-size:1.5rem;color:${accentColor}">${dispPos}번 칸</span>에 꽂으세요`}
       </div>
 
       <!-- 환자 / 검사 정보 그리드 -->
@@ -747,6 +765,12 @@ function renderAutoMicroResult(res) {
     </div>`;
 
   msg.innerHTML = `<div class="alert alert-${isDup ? "warning" : "success"} mb-0">${escapeHtml(res.message)}</div>`;
+
+  // 처리 완료 시 결과 카드 그린 플래시
+  if (!isDup) {
+    const card = el.firstElementChild;
+    if (card) { card.classList.remove("result-flash"); void card.offsetWidth; card.classList.add("result-flash"); }
+  }
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -860,20 +884,23 @@ function renderRackUI(data, rackNo, highlightPos) {
 
   const container = document.getElementById("rackGrid");
 
-  // ── 고정 픽셀 그리드 (CSS 클래스 완전 배제 — aspect-ratio 충돌 방지) ──
-  const CELL = 24, GAP = 2;
-  // 컨테이너: 컬럼·행 모두 고정 px, align-items:stretch 해제
+  // ── 셀 크기: 컨테이너 폭에 맞게 자동 계산 (패딩 48px 차감) ──
+  const GAP = 3;
+  const panel    = container.closest(".page-panel") || container.parentElement;
+  const availW   = (panel?.clientWidth || 400) - 48;          // 패딩 24px × 2
+  const maxCell  = rackSize <= 50 ? 42 : 28;
+  const CELL     = Math.max(22, Math.min(maxCell, Math.floor((availW - 9 * GAP) / 10)));
   container.setAttribute("style",
     `display:grid;grid-template-columns:repeat(10,${CELL}px);` +
-    `grid-auto-rows:${CELL}px;gap:${GAP}px;` +
-    `width:${10*CELL + 9*GAP}px;align-items:start;`
+    `grid-auto-rows:${CELL}px;gap:${GAP}px;align-items:start;`
   );
 
-  // 공통 셀 기본 스타일 (변하지 않는 부분)
+  // 공통 셀 기본 스타일 (폰트도 셀 크기에 비례)
+  const fsize = CELL <= 24 ? 8 : CELL <= 30 ? 10 : CELL <= 36 ? 11 : 13;
   const BASE =
     `width:${CELL}px;height:${CELL}px;box-sizing:border-box;` +
-    `border-radius:3px;display:flex;align-items:center;justify-content:center;` +
-    `font-size:9px;font-weight:700;line-height:1;` +
+    `border-radius:${CELL <= 28 ? 3 : 5}px;display:flex;align-items:center;justify-content:center;` +
+    `font-size:${fsize}px;font-weight:800;line-height:1;` +
     `cursor:default;user-select:none;overflow:hidden;flex-shrink:0;`;
 
   let html = "";
@@ -881,19 +908,18 @@ function renderRackUI(data, rackNo, highlightPos) {
     const isDone   = donePositions.has(i);
     const isActive = i === highlightPos;
 
-    const bg  = isActive ? "#fef08a" : isDone ? "#dcfce7" : "#f1f5f9";
-    const clr = isActive ? "#78350f" : isDone ? "#16a34a" : "#94a3b8";
-    const bd  = isActive ? "2px solid #f59e0b" : isDone ? "1px solid #bbf7d0" : "1px solid #e2e8f0";
+    // 고가시성 3단계 색상: 미처리=회색, 완료=진초록/흰글씨, 방금=주황 점멸
+    const bg  = isActive ? "#f97316" : isDone ? "#16a34a" : "#e2e8f0";
+    const clr = isActive ? "#fff"    : isDone ? "#fff"    : "#64748b";
+    const bd  = isActive ? "2px solid #ea580c" : isDone ? "none" : "1px solid #cbd5e1";
     const anim = isActive
-      ? "animation:rack-blink .55s ease-in-out infinite;transform:scale(1.05);" : "";
+      ? "animation:rack-blink .5s ease-in-out infinite;transform:scale(1.08);box-shadow:0 0 8px #f9731680;" : "";
 
-    // ★ class 없음 — CSS rack-cell 규칙(aspect-ratio:1)이 개입하지 못하게
-    html += `<div data-pos="${i}" style="${BASE}` +
-      `background:${bg};color:${clr};border:${bd};${anim}">${i}</div>`;
+    html += `<div data-pos="${i}" style="${BASE}background:${bg};color:${clr};border:${bd};${anim}">${i}</div>`;
   }
   container.innerHTML = html;
 
-  // 방금 스캔한 칸 4초 후 초록으로
+  // 방금 스캔한 칸 — 3.5초 후 완료(진초록)으로 전환
   if (highlightPos) {
     const cell = container.querySelector(`[data-pos="${highlightPos}"]`);
     if (cell) {
@@ -901,12 +927,13 @@ function renderRackUI(data, rackNo, highlightPos) {
         if (cell.parentElement) {
           cell.style.animation  = "";
           cell.style.transform  = "";
-          cell.style.background = "#dcfce7";
-          cell.style.color      = "#16a34a";
-          cell.style.border     = "1px solid #bbf7d0";
+          cell.style.boxShadow  = "";
+          cell.style.background = "#16a34a";
+          cell.style.color      = "#fff";
+          cell.style.border     = "none";
         }
         lastHighlightPos = null;
-      }, 4000);
+      }, 3500);
     }
   }
 }
@@ -987,49 +1014,74 @@ function renderMicroWorkList(assignments) {
   let html = "";
   for (const [ct, rows] of Object.entries(grouped)) {
     if (!rows.length) continue;
-    // 각 소분류 내에서 스캔순(assigned_at) 역순
     const sorted = [...rows].reverse();
+    const col = getCultureColor(ct);
     html += `
-      <div class="sub-status-section mb-3">
-        <div class="sub-status-header">
-          <h3>${escapeHtml(ct)}
-            <span class="text-secondary fw-normal">(${sorted.length}건)</span>
-          </h3>
+      <div class="mb-4">
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;
+                    background:${col.hdr};border-radius:8px 8px 0 0;margin-bottom:0">
+          <span style="color:#fff;font-size:1rem;font-weight:800">${escapeHtml(ct)}</span>
+          <span style="background:rgba(255,255,255,.25);color:#fff;border-radius:20px;
+                       padding:1px 10px;font-size:.82rem;font-weight:700">${sorted.length}건</span>
         </div>
-        ${buildMicroTable(sorted)}
+        ${buildMicroTable(sorted, ct)}
       </div>`;
   }
   el.innerHTML = html;
   document.getElementById("printPages").innerHTML = html;
 }
 
-function buildMicroTable(rows) {
-  const tbody = rows.map(r => `
-    <tr>
-      <td class="text-center">${r.scan_order}</td>
-      <td><span class="badge text-bg-secondary" style="font-size:.72rem">${escapeHtml(r.culture_type)}</span></td>
-      <td class="text-center fw-bold">${r.culture_order}</td>
-      <td class="text-center">${r.rack_no}</td>
-      <td class="text-center"><span class="location-code-badge">${r.rack_position}</span></td>
-      <td class="font-monospace fw-semibold">${escapeHtml(r.accession_no)}</td>
-      <td>${escapeHtml(patientText(r))}</td>
-      <td>${escapeHtml(r.hospital_name || "")}</td>
-      <td class="text-start">${escapeHtml((r.test_names||[]).join(", "))}</td>
-      <td>${escapeHtml(r.specimen_name || "")}</td>
-    </tr>`).join("");
-  return `<div class="table-responsive"><table class="compact-table">
-    <thead><tr>
-      <th style="width:52px">스캔순</th>
-      <th>소분류</th>
-      <th style="width:56px">순번</th>
-      <th style="width:44px">랙</th>
-      <th style="width:44px">칸</th>
-      <th>접수번호</th>
-      <th>성명/나이</th>
-      <th>병원명</th>
-      <th>검사명</th>
-      <th>검체명</th>
-    </tr></thead>
+// 소분류별 고정 색상 팔레트
+const CULTURE_COLOR = {
+  "Urine culture":        { hdr:"#1d4ed8", light:"#dbeafe", badge:"#2563eb" },
+  "Sputum culture":       { hdr:"#0f766e", light:"#ccfbf1", badge:"#14b8a6" },
+  "Stool/Rectal culture": { hdr:"#b45309", light:"#fef3c7", badge:"#f59e0b" },
+  "CRE culture":          { hdr:"#b91c1c", light:"#fee2e2", badge:"#ef4444" },
+  "VRE culture":          { hdr:"#6d28d9", light:"#ede9fe", badge:"#8b5cf6" },
+  "Blood culture":        { hdr:"#9d174d", light:"#fce7f3", badge:"#ec4899" },
+  "보건흉":               { hdr:"#065f46", light:"#d1fae5", badge:"#10b981" },
+};
+function getCultureColor(ct) {
+  return CULTURE_COLOR[ct] || { hdr:"#374151", light:"#f3f4f6", badge:"#6b7280" };
+}
+
+function buildMicroTable(rows, ct) {
+  const col = getCultureColor(ct);
+  const tbody = rows.map((r, idx) => {
+    const rowBg = idx % 2 === 0 ? "#fff" : col.light;
+    return `
+    <tr style="background:${rowBg}">
+      <td class="text-center fw-bold" style="color:#64748b;font-size:.85rem">${r.scan_order}</td>
+      <td class="text-center">
+        <span style="display:inline-block;min-width:28px;padding:2px 6px;border-radius:6px;
+                     background:${col.hdr};color:#fff;font-size:.78rem;font-weight:700">${r.rack_no}</span>
+      </td>
+      <td class="text-center">
+        <span style="display:inline-block;min-width:32px;padding:3px 8px;border-radius:6px;
+                     background:${col.badge};color:#fff;font-size:.88rem;font-weight:800">${r.rack_position}</span>
+      </td>
+      <td class="text-center fw-bold" style="color:#374151">${r.culture_order}</td>
+      <td class="font-monospace fw-bold" style="font-size:.9rem;color:#0f172a">${escapeHtml(r.accession_no)}</td>
+      <td style="font-weight:600">${escapeHtml(patientText(r))}</td>
+      <td style="color:#475569">${escapeHtml(r.hospital_name || "")}</td>
+      <td style="font-size:.82rem;color:#374151">${escapeHtml((r.test_names||[]).join(", "))}</td>
+      <td style="font-size:.82rem;color:#475569">${escapeHtml(r.specimen_name || "")}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="table-responsive"><table class="compact-table" style="font-size:.88rem">
+    <thead>
+      <tr style="background:${col.hdr};color:#fff">
+        <th style="width:48px;color:#fff">스캔순</th>
+        <th style="width:44px;color:#fff">랙</th>
+        <th style="width:44px;color:#fff">칸</th>
+        <th style="width:52px;color:#fff">순번</th>
+        <th style="color:#fff">접수번호</th>
+        <th style="color:#fff">성명/나이</th>
+        <th style="color:#fff">병원명</th>
+        <th style="color:#fff">검사명</th>
+        <th style="color:#fff">검체명</th>
+      </tr>
+    </thead>
     <tbody>${tbody}</tbody>
   </table></div>`;
 }
