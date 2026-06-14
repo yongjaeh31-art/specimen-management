@@ -141,11 +141,13 @@ def subcategory_assignments(db: Session = Depends(get_db)):
 
 @router.get("/worklist/export")
 def export_worklist(db: Session = Depends(get_db)):
-    """오늘 스캔 완료 목록 → {소분류} 워크리스트 (소분류별 시트, 25행/페이지, A4 가로, LIS순 정렬)"""
+    """오늘 스캔 완료 목록 → {소분류} 워크리스트 (첨부 서식 그대로, 25행/페이지, LIS순)"""
+    from openpyxl.styles import Color as XLColor
+
     assignments = get_today_micro_assignments(db)
     today_str = date.today().strftime("%Y-%m-%d")
 
-    # 소분류별 그룹핑 후 각 그룹 내 culture_order(LIS순) 오름차순 정렬
+    # 소분류별 그룹핑 → LIS 순번(culture_order) 오름차순
     groups: dict[str, list] = {}
     for row in assignments:
         groups.setdefault(row["culture_type"], []).append(row)
@@ -155,14 +157,38 @@ def export_worklist(db: Session = Depends(get_db)):
     wb = Workbook()
     wb.remove(wb.active)
 
-    thin = Side(style="thin", color="BBBBBB")
-    cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    bottom_only = Border(bottom=Side(style="thin", color="999999"))
-    COL_NAMES = ["순번", "접수번호", "성명 (성별/나이)", "병원명", "검사명", "검체명"]
-    COL_WIDTHS = [5, 13, 16, 20, 38, 14]
+    # ── 참조 xlsx 서식 그대로 재현 ────────────────────────────────────────
+    # 배경 fill: Excel 기본 흰 배경 (theme=0 / bgColor indexed=64)
+    auto_fill = PatternFill(
+        patternType="solid",
+        fgColor=XLColor(theme=0, tint=0.0),
+        bgColor=XLColor(indexed=64),
+    )
+
+    # 제목 하단 선 (#999999)
+    title_border = Border(bottom=Side(border_style="thin", color="FF999999"))
+
+    # 헤더: 사방 thin
+    hdr_border = Border(
+        top=Side(border_style="thin"),
+        bottom=Side(border_style="thin"),
+        left=Side(border_style="thin"),
+        right=Side(border_style="thin"),
+    )
+
+    def _data_border(is_first: bool, ci: int) -> Border:
+        """col 1:left thin, col 6:right thin / 첫째 데이터행 top thin, 이후 hair(#BBB)"""
+        hair = Side(border_style="hair", color="FFBBBBBB")
+        top  = Side(border_style="thin") if is_first else hair
+        lft  = Side(border_style="thin") if ci == 1 else None
+        rgt  = Side(border_style="thin") if ci == 6 else None
+        return Border(top=top, bottom=hair, left=lft, right=rgt)
+
+    COL_NAMES  = ["순번", "접수번호", "성명 (성별/나이)", "병원명", "검사명", "검체명"]
+    COL_WIDTHS = [5.0, 13.0, 16.0, 20.0, 38.0, 14.0]
     NCOLS = len(COL_NAMES)
     DATA_PER_PAGE = 25
-    HEADER_ROWS = 3  # 타이틀 + 날짜/페이지행 + 컬럼헤더
+    HEADER_ROWS   = 3  # 타이틀 + 날짜/페이지 + 헤더
 
     if not groups:
         ws = wb.create_sheet("미생물 워크리스트")
@@ -171,63 +197,60 @@ def export_worklist(db: Session = Depends(get_db)):
         for ct, rows in groups.items():
             ws = wb.create_sheet(_safe_sheet_name(ct)[:31])
 
-            # A4 가로 인쇄 설정
-            ws.page_setup.paperSize = 9
+            ws.page_setup.paperSize   = 9            # A4
             ws.page_setup.orientation = "landscape"
-            ws.page_setup.fitToPage = True
-            ws.page_setup.fitToWidth = 1
+            ws.page_setup.fitToPage   = True
+            ws.page_setup.fitToWidth  = 1
             ws.page_setup.fitToHeight = 0
-            ws.page_margins.left = 0.5
-            ws.page_margins.right = 0.5
-            ws.page_margins.top = 0.7
+            ws.page_margins.left   = 0.5
+            ws.page_margins.right  = 0.5
+            ws.page_margins.top    = 0.7
             ws.page_margins.bottom = 0.7
 
             for i, w in enumerate(COL_WIDTHS, 1):
                 ws.column_dimensions[get_column_letter(i)].width = w
 
             total_pages = ceil(len(rows) / DATA_PER_PAGE)
-            hdr_fill = PatternFill("solid", fgColor="D9EAF7")
 
             for pg in range(total_pages):
                 page_rows = rows[pg * DATA_PER_PAGE : (pg + 1) * DATA_PER_PAGE]
-                base = pg * (HEADER_ROWS + DATA_PER_PAGE) + 1  # 1-indexed
+                base = pg * (HEADER_ROWS + DATA_PER_PAGE) + 1
 
-                # 행1: "{소분류명} 워크리스트" — 배경 없음, 검정 굵은 텍스트, 가운데 정렬
-                ws.merge_cells(start_row=base, start_column=1, end_row=base, end_column=NCOLS)
-                tc = ws.cell(base, 1, f"{ct} 워크리스트")
-                tc.font = Font(name="굴림", size=14, bold=True)
+                # ── 행1: "{소분류명} 워크리스트" ─────────────────────────
+                r1 = base
+                ws.merge_cells(start_row=r1, start_column=1, end_row=r1, end_column=NCOLS)
+                tc = ws.cell(r1, 1, f"{ct} 워크리스트")
+                tc.font      = Font(name="굴림", size=14, bold=True)
                 tc.alignment = Alignment(horizontal="center", vertical="center")
-                tc.border = bottom_only
-                ws.row_dimensions[base].height = 24
+                tc.border    = title_border
+                ws.row_dimensions[r1].height = 24.0
 
-                # 행2: 접수일자(좌) + 페이지(우)
-                info_row = base + 1
-                ws.merge_cells(start_row=info_row, start_column=1, end_row=info_row, end_column=4)
-                c = ws.cell(info_row, 1, f"접수일자 :   {today_str}  ~  {today_str}")
-                c.font = Font(name="굴림", size=9)
-                c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+                # ── 행2: 접수일자(좌) + 페이지(우) ──────────────────────
+                r2 = base + 1
+                ws.merge_cells(start_row=r2, start_column=1, end_row=r2, end_column=4)
+                c = ws.cell(r2, 1, f"접수일자 :   {today_str}  ~  {today_str}")
+                c.font      = Font(name="굴림", size=9)
+                c.alignment = Alignment(vertical="center")
+                ws.merge_cells(start_row=r2, start_column=5, end_row=r2, end_column=NCOLS)
+                c = ws.cell(r2, 5, f"페이지 : {pg + 1} of {total_pages}")
+                c.font      = Font(name="굴림", size=9)
+                c.alignment = Alignment(horizontal="right", vertical="center")
+                ws.row_dimensions[r2].height = 14.0
 
-                ws.merge_cells(start_row=info_row, start_column=5, end_row=info_row, end_column=NCOLS)
-                c = ws.cell(info_row, 5, f"페이지 : {pg + 1} of {total_pages}")
-                c.font = Font(name="굴림", size=9)
-                c.alignment = Alignment(horizontal="right", vertical="center", indent=1)
-                ws.row_dimensions[info_row].height = 14
-
-                # 행3: 컬럼 헤더
-                hdr_row = base + 2
+                # ── 행3: 컬럼 헤더 ──────────────────────────────────────
+                r3 = base + 2
                 for ci, h in enumerate(COL_NAMES, 1):
-                    c = ws.cell(hdr_row, ci, h)
-                    c.font = Font(name="굴림", size=8, bold=True)
-                    c.fill = hdr_fill
+                    c = ws.cell(r3, ci, h)
+                    c.font      = Font(name="굴림", size=10, bold=True)
+                    c.fill      = auto_fill
+                    c.border    = hdr_border
                     c.alignment = Alignment(horizontal="center", vertical="center")
-                    c.border = cell_border
-                ws.row_dimensions[hdr_row].height = 16
+                ws.row_dimensions[r3].height = 16.05
 
-                # 데이터 행
+                # ── 데이터 행 ───────────────────────────────────────────
                 for i, row in enumerate(page_rows):
-                    dr = base + HEADER_ROWS + i
+                    dr  = base + HEADER_ROWS + i
                     seq = pg * DATA_PER_PAGE + i + 1
-                    alt_fill = PatternFill("solid", fgColor=("FFFFFF" if i % 2 == 0 else "EBF4FB"))
                     vals = [
                         seq,
                         row.get("accession_no", ""),
@@ -238,19 +261,18 @@ def export_worklist(db: Session = Depends(get_db)):
                     ]
                     for ci, val in enumerate(vals, 1):
                         c = ws.cell(dr, ci, val)
-                        c.font = Font(name="굴림", size=8, bold=(ci == 2))
-                        c.fill = alt_fill
-                        c.border = cell_border
+                        c.font      = Font(name="굴림", size=10, bold=(ci == 2))
+                        c.fill      = auto_fill
+                        c.border    = _data_border(i == 0, ci)
                         c.alignment = Alignment(
                             horizontal="center" if ci <= 2 else "left",
                             vertical="center",
                         )
-                    ws.row_dimensions[dr].height = 14
+                    ws.row_dimensions[dr].height = 14.0
 
-                # 페이지 나누기 (마지막 페이지 제외)
+                # 페이지 나누기 (마지막 제외)
                 if pg < total_pages - 1:
-                    last_dr = base + HEADER_ROWS + len(page_rows) - 1
-                    ws.row_breaks.append(Break(id=last_dr))
+                    ws.row_breaks.append(Break(id=base + HEADER_ROWS + len(page_rows) - 1))
 
     output = BytesIO()
     wb.save(output)
