@@ -540,12 +540,13 @@ async function submitSubBarcode(input) {
       loadTodayAssignments(),
     ]);
 
-    const ok  = res.status === "ASSIGNED";
-    const dup = res.status === "DUPLICATE";
+    const ok   = res.status === "ASSIGNED";
+    const dup  = res.status === "DUPLICATE";
+    const isMulti = ok && !!res.multi_culture_warning;
     showToast(
-      ok ? "소분류 완료" : dup ? "중복 처리" : "처리 불가",
-      res.message,
-      ok ? "success" : dup ? "warning" : "danger",
+      isMulti ? "복수 소분류 — 자동 처리" : ok ? "소분류 완료" : dup ? "중복 처리" : "처리 불가",
+      isMulti ? res.multi_culture_warning : res.message,
+      isMulti ? "warning" : ok ? "success" : dup ? "warning" : "danger",
     );
   } catch (err) {
     document.getElementById("subdivisionMessage").innerHTML =
@@ -723,6 +724,25 @@ function renderAutoMicroResult(res) {
           ${isDup ? "중복 처리" : "처리 완료"}
         </span>
       </div>
+
+      <!-- 복수 소분류 경고 배너 -->
+      ${res.multi_culture_warning ? `
+      <div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:8px;padding:9px 13px;
+                  margin-bottom:12px;display:flex;align-items:flex-start;gap:8px">
+        <i class="bi bi-exclamation-triangle-fill" style="color:#d97706;margin-top:2px;flex-shrink:0"></i>
+        <div>
+          <div style="font-weight:800;font-size:.82rem;color:#92400e;margin-bottom:2px">복수 소분류 대상</div>
+          <div style="font-size:.8rem;color:#78350f">${escapeHtml(res.multi_culture_warning)}</div>
+          <div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">
+            ${(res.culture_types||[]).map(ct =>
+              `<span style="font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:20px;
+                background:${ct===res.culture_type?'#d97706':'#fff'};
+                color:${ct===res.culture_type?'#fff':'#92400e'};
+                border:1px solid #f59e0b">${escapeHtml(ct)}</span>`
+            ).join("")}
+          </div>
+        </div>
+      </div>` : ""}
 
       <!-- 랙 번호 · 칸 번호 크게 표시 -->
       <div style="display:flex;gap:10px;align-items:stretch;margin-bottom:12px">

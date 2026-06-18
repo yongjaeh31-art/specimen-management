@@ -292,6 +292,7 @@ def export_subcategory_assignments(
     page_no: int | None = None,
     db: Session = Depends(get_db),
 ):
+    from datetime import date as _date
     rows = combined_assignments(db)
     if department_name:
         rows = [row for row in rows if row["department_name"] == department_name]
@@ -302,53 +303,134 @@ def export_subcategory_assignments(
 
     workbook = Workbook()
     workbook.remove(workbook.active)
-    # 처리시간 컬럼 제거 — DB에는 유지, 엑셀 출력에서만 제외
-    headers = ["번호", "워크리스트순", "접수번호", "성명/나이", "병원명", "검사명", "검체명", "위치번호"]
-    num_cols = len(headers)
+    today_str = _date.today().strftime("%Y-%m-%d")
+
+    # 25컬럼 너비 (참조 서식 기준)
+    COL_WIDTHS = [4.57, 9.14, 0.14, 5.0, 5.29, 1.14, 4.43, 0.14, 4.14, 2.0,
+                  11.71, 0.86, 0.71, 0.14, 5.57, 4.43, 8.57, 3.43, 6.86, 6.43,
+                  4.43, 1.29, 11.71, 2.14, 3.71]
+    # 검체 1건당 6행 구조의 행 높이
+    REC_HEIGHTS = [9.75, 0.75, 1.5, 12.75, 1.5, 1.5]
+    FONT        = "맑은 고딕"
+    dotted_left = Border(left=Side(border_style="dotted"))
+    medium_bot  = Side(border_style="medium")
+
+    def _set_border_bot(cell):
+        """기존 테두리를 유지하면서 하단 medium 추가"""
+        b = cell.border
+        cell.border = Border(
+            top=b.top, bottom=medium_bot,
+            left=b.left, right=b.right,
+        )
+
+    def _build_sheet(ws, dept, subcat, grp_rows):
+        ws.page_setup.paperSize  = 9
+        ws.page_setup.orientation = "portrait"
+        ws.page_margins.left     = 0.5
+        ws.page_margins.right    = 0.5
+        ws.page_margins.top      = 0.7
+        ws.page_margins.bottom   = 0.7
+        ws.print_options.horizontalCentered = True   # 수평 가운데 정렬
+
+        for i, w in enumerate(COL_WIDTHS, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+        # ── 행1: 타이틀 ───────────────────────────────────────────────
+        ws.row_dimensions[1].height = 27.75
+        ws.merge_cells("E1:U1")
+        tc = ws.cell(1, 5, "워크리스트")
+        tc.font      = Font(name=FONT, size=20, bold=True)
+        tc.alignment = Alignment(horizontal="center", vertical="center")
+
+        # ── 행2: 주 헤더 (병합 → 스타일) ─────────────────────────────
+        ws.row_dimensions[2].height = 12.75
+        ws.merge_cells("C2:E2")
+        ws.merge_cells("F2:J2")
+        ws.merge_cells("K2:M2")
+        ws.merge_cells("N2:X2")
+        for col, label in [(1,"순번"),(2,"접수일자"),(3,"수진자명"),
+                           (6,"병리번호"),(11,"거래처명"),(14,"검사명"),(25,"건수")]:
+            c = ws.cell(2, col, label)
+            c.font      = Font(name=FONT, size=8, color="808080")
+            c.alignment = Alignment(horizontal="left", vertical="center")
+
+        # ── 행3: 보조 헤더 (병합 → 스타일 → 하단 medium 선) ─────────
+        ws.row_dimensions[3].height = 13.5
+        ws.merge_cells("C3:E3")
+        ws.merge_cells("F3:J3")
+        ws.merge_cells("K3:M3")
+        ws.merge_cells("N3:X3")
+        for col, label in [(2,"등록번호"),(3,"생년월일"),(6,"수탁바코드")]:
+            c = ws.cell(3, col, label)
+            c.font      = Font(name=FONT, size=8, color="808080")
+            c.alignment = Alignment(horizontal="left", vertical="center")
+        # medium 하단선: 각 병합 구역의 top-left 셀 + 단독 셀에만 적용
+        for col in [1, 2, 3, 6, 11, 14, 25]:
+            _set_border_bot(ws.cell(3, col))
+
+        # ── 데이터 행 (검체당 6행) ────────────────────────────────────
+        for idx, row in enumerate(grp_rows):
+            R = 4 + idx * 6
+
+            for ri, h in enumerate(REC_HEIGHTS):
+                ws.row_dimensions[R + ri].height = h
+
+            # ① 병합 먼저
+            ws.merge_cells(start_row=R,   start_column=1,  end_row=R+3, end_column=1)
+            ws.merge_cells(start_row=R,   start_column=2,  end_row=R+1, end_column=3)
+            ws.merge_cells(start_row=R,   start_column=4,  end_row=R+2, end_column=5)
+            ws.merge_cells(start_row=R,   start_column=6,  end_row=R+1, end_column=10)
+            ws.merge_cells(start_row=R,   start_column=11, end_row=R+3, end_column=14)
+            ws.merge_cells(start_row=R,   start_column=15, end_row=R,   end_column=23)
+            ws.merge_cells(start_row=R+1, start_column=15, end_row=R+3, end_column=23)
+            ws.merge_cells(start_row=R,   start_column=25, end_row=R+3, end_column=25)
+            ws.merge_cells(start_row=R+3, start_column=2,  end_row=R+4, end_column=3)
+            ws.merge_cells(start_row=R+3, start_column=4,  end_row=R+4, end_column=5)
+            ws.merge_cells(start_row=R+3, start_column=6,  end_row=R+4, end_column=10)
+
+            seq   = row.get("group_item_no") or (idx + 1)
+            pname = row.get("patient_name") or ""
+            page  = row.get("patient_age") or ""
+            hosp  = row.get("hospital_name") or ""
+            tests = ", ".join(row.get("test_names") or [])
+            spec  = row.get("specimen_name") or ""
+            accno = row.get("accession_no") or ""
+
+            def _c(r, col, val, bold=False, size=8, halign="left", valign="top", border=None):
+                cell = ws.cell(r, col, val)
+                cell.font      = Font(name=FONT, size=size, bold=bold)
+                cell.alignment = Alignment(horizontal=halign, vertical=valign, wrap_text=False)
+                if border:
+                    cell.border = border
+                return cell
+
+            # ② 병합 후 스타일/값 적용
+            _c(R,   1,  seq,      halign="left")
+            _c(R,   2,  today_str)
+            _c(R,   4,  pname,    bold=True)
+            _c(R,   6,  "",       bold=True, size=9)   # 병리번호 공란
+            _c(R,   11, hosp)
+            _c(R,   15, tests,    border=dotted_left)
+            _c(R,   25, 1,        halign="right")
+            _c(R+1, 15, spec,     size=6,  border=dotted_left)
+            # R+2, R+3 col15는 O{R+1}:W{R+3} 병합 보조셀 → 값/테두리 직접 설정 불가
+            # top-left(R+1,15)의 left=dotted 테두리가 병합 전체 높이에 렌더링됨
+            _c(R+3, 2,  accno)
+            _c(R+3, 4,  page,     bold=True)
+            _c(R+3, 6,  "",       size=8)              # 수탁바코드 공란
 
     if not rows:
-        sheet = workbook.create_sheet("소분류")
-        _write_title_row(sheet, "소분류 현황", num_cols)
-        for col, h in enumerate(headers, 1):
-            sheet.cell(row=2, column=col, value=h)
-        _format_sheet(sheet, num_cols)
+        ws = workbook.create_sheet("소분류")
+        _build_sheet(ws, "", "소분류 현황", [])
     else:
-        group_keys: list[tuple] = []
+        groups: dict[tuple, list] = {}
         for row in rows:
-            key = (row["department_name"], row["subcategory"], row["page_no"])
-            if key not in group_keys:
-                group_keys.append(key)
-
-        for dept, subcat, pg in group_keys:
-            page_rows = [
-                row for row in rows
-                if row["department_name"] == dept
-                and row["subcategory"] == subcat
-                and row["page_no"] == pg
-            ]
-            safe_name = _safe_sheet_name(f"{dept}-{subcat}")[:23]
-            sheet = workbook.create_sheet(f"{safe_name}-{pg}")
-
-            # 1행: 소분류 제목
-            title = f"{dept} / {subcat}  [{pg}번 묶음  {len(page_rows)}/30]"
-            _write_title_row(sheet, title, num_cols)
-
-            # 2행: 헤더
-            for col, h in enumerate(headers, 1):
-                sheet.cell(row=2, column=col, value=h)
-
-            # 3행~: 데이터 (처리시간 제외)
-            for r_idx, row in enumerate(page_rows, 3):
-                sheet.cell(r_idx, 1, row["page_item_no"])
-                sheet.cell(r_idx, 2, row.get("worklist_order") or "")
-                sheet.cell(r_idx, 3, row["accession_no"])
-                sheet.cell(r_idx, 4, _patient_text(row))
-                sheet.cell(r_idx, 5, row.get("hospital_name") or "")
-                sheet.cell(r_idx, 6, ", ".join(row.get("test_names") or []))
-                sheet.cell(r_idx, 7, row.get("specimen_name") or "")
-                sheet.cell(r_idx, 8, row["location_code"])
-
-            _format_sheet(sheet, num_cols)
+            key = (row["department_name"], row["subcategory"])
+            groups.setdefault(key, []).append(row)
+        for (dept, subcat), grp_rows in groups.items():
+            safe_name = _safe_sheet_name(f"{dept}-{subcat}")[:31]
+            ws = workbook.create_sheet(safe_name)
+            _build_sheet(ws, dept, subcat, grp_rows)
 
     output = BytesIO()
     workbook.save(output)

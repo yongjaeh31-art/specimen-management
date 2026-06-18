@@ -31,6 +31,8 @@ COLUMN_ALIASES = {
         "\uc131\uba85",
         "\uc218\uc9c4\uc790\uba85",
         "\uc218\uc9c4\uc790",
+        "\uc218\uac80\uc790\uba85",   # \uc218\uac80\uc790\uba85
+        "\uc218\uac80\uc790",          # \uc218\uac80\uc790
     ],
     "patient_age": [
         "patient_age",
@@ -53,6 +55,8 @@ COLUMN_ALIASES = {
         "\ubcd1\uc6d0",
         "\uc758\ub8cc\uae30\uad00",
         "\uc758\ub8cc\uae30\uad00\uba85",
+        "\uac70\ub798\ucc98\uba85",   # \uac70\ub798\ucc98\uba85
+        "\uac70\ub798\ucc98",          # \uac70\ub798\ucc98
     ],
     "specimen_name": [
         "specimen_name",

@@ -375,13 +375,27 @@ def auto_assign_culture_hole(
         db.commit()
         return {"status": status, "message": msg, **_base()}
 
-    if len(culture_types) > 1:
-        msg = f"복수 소분류 대상입니다. 확인 필요: {', '.join(culture_types)}"
-        _scan_log(db, accession_no, None, "MULTI_CULTURE", msg, client_name, operator_name, workstation_name)
-        db.commit()
-        return {"status": "MULTI_CULTURE", "message": msg, "culture_types": culture_types, **_base()}
+    # 복수 소분류 시 우선 처리 순서: 산전 GBS 배양검사 → 나머지는 수동
+    PRIORITY_AUTO = ["산전 GBS 배양검사"]
 
-    culture_type = culture_types[0]
+    multi_culture_warning: str | None = None
+    if len(culture_types) > 1:
+        priority_match = next((ct for ct in PRIORITY_AUTO if ct in culture_types), None)
+        if priority_match:
+            culture_type = priority_match
+            multi_culture_warning = (
+                f"복수 소분류 대상입니다 ({', '.join(culture_types)}) — "
+                f"{priority_match}(으)로 자동 처리됩니다."
+            )
+            _scan_log(db, accession_no, culture_type, "MULTI_CULTURE_AUTO",
+                      multi_culture_warning, client_name, operator_name, workstation_name)
+        else:
+            msg = f"복수 소분류 대상입니다. 확인 필요: {', '.join(culture_types)}"
+            _scan_log(db, accession_no, None, "MULTI_CULTURE", msg, client_name, operator_name, workstation_name)
+            db.commit()
+            return {"status": "MULTI_CULTURE", "message": msg, "culture_types": culture_types, **_base()}
+    else:
+        culture_type = culture_types[0]
 
     # 3. 예정 목록(plan) 조회
     plan = (
@@ -489,9 +503,12 @@ def auto_assign_culture_hole(
 
     db.commit()
 
+    base_msg = f"{culture_type}  {rack_no}번 랙 / {rack_pos}번 칸입니다."
     return {
         "status": "ASSIGNED",
-        "message": f"{culture_type}  {rack_no}번 랙 / {rack_pos}번 칸입니다.",
+        "message": base_msg,
+        "multi_culture_warning": multi_culture_warning,
+        "culture_types": culture_types if multi_culture_warning else None,
         "culture_type": culture_type,
         "culture_order": plan.lis_order,
         "rack_no": rack_no,

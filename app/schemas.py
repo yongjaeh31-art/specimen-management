@@ -24,6 +24,8 @@ MICRO_CULTURE_TYPES = [
     "보건증",
     "Tip culture",
     "Bronchial washing culture",
+    "산전 GBS 배양검사",
+    "Mycoplasma & Ureaplasma Culture",
     "Other culture",
 ]
 

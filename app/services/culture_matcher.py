@@ -23,6 +23,14 @@ def infer_culture_for_test(test_name: str, specimen_name: str | None = None) -> 
     if "보건증" in n or ("salmonella" in n and "shigella" in n):
         return "보건증"
 
+    # GBS (산전) — CRE/VRE보다 먼저 체크
+    if "gbs" in n and ("culture" in n or "배양" in n or "sensitivity" in n):
+        return "산전 GBS 배양검사"
+
+    # Mycoplasma / Ureaplasma
+    if "mycoplasma" in n or "ureaplasma" in n:
+        return "Mycoplasma & Ureaplasma Culture"
+
     # CRE / VRE — 검사명에 명시된 경우 검체명 무관
     if "cre" in n and ("culture" in n or "배양" in n):
         return "CRE culture"
