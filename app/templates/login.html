@@ -130,6 +130,7 @@ async function afterLoginFlow(user) {
   if (savedPC) {
     // 이미 PC명 있음 → DB 자동 확인·등록 후 이동
     await registerPC(savedPC, user.display_name).catch(() => {});
+    localStorage.setItem("workstationName", savedPC);  // scan/micro 페이지와 키 동기화
     window.location.href = "/scan";
   } else {
     // PC명 없음 → 모달 표시
@@ -201,6 +202,7 @@ document.getElementById("pcRegBtn").addEventListener("click", async () => {
     const user   = JSON.parse(localStorage.getItem("currentUser") || "{}");
     const result = await registerPC(pcName, user.display_name || "");
     localStorage.setItem("pcName", pcName);
+    localStorage.setItem("workstationName", pcName);  // scan/micro 페이지와 키 동기화
     const isNew  = result.status === "registered";
     msg.innerHTML = `<div class="alert alert-success py-1 mb-0" style="font-size:.82rem">
       <i class="bi bi-check-circle me-1"></i>

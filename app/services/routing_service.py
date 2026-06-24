@@ -30,6 +30,7 @@ DEFAULT_ROUTING_RULES = [
     ("Fungus culture & Sensitivity (MIC)", "외주", False, True),
     ("Dysmorphic RBC", "요경검", False, False),
     ("AFB culture", "미생물", False, True),
+    ("Haemophilus ducreyi PCR", "분자진단", True, True),
     ("Gardnerella vaginalis PCR", "분자진단", True, True),
     ("Xpert MTB/RIF", "분자진단", True, True),
     ("culture", "미생물", False, True),

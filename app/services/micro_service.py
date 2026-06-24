@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import CultureRule, MicroCultureAssignment, MicroCulturePlan, Order, OrderTest, ScanLog, SpecimenArrival
@@ -9,11 +10,26 @@ RACK_SIZE = 50  # 50칸 스폰지랙
 
 
 def _today_start() -> datetime:
-    """오늘 KST 00:00 → UTC naive (SQLite func.now()는 UTC 저장)
-    DB 비교: KST 자정 = UTC 전날 15:00 → 오전 9시 이전 스캔도 오늘로 인식"""
-    d = date.today()  # 한국 로컬 날짜
-    kst_midnight = datetime(d.year, d.month, d.day)
-    return kst_midnight - timedelta(hours=9)  # KST → UTC
+    """오늘 KST 00:00 → UTC naive"""
+    d = date.today()
+    return datetime(d.year, d.month, d.day) - timedelta(hours=9)
+
+
+SHIFT_HOUR = 19  # 출근 기준 시각 (KST)
+
+
+def _shift_start() -> datetime:
+    """출근 기준(KST 19:00) 시작 시각 → UTC naive
+    현재 KST 19시 이전이면 전날 19시, 이후면 오늘 19시"""
+    now_kst = datetime.now()
+    today = now_kst.date()
+    today_19 = datetime(today.year, today.month, today.day, SHIFT_HOUR, 0)
+    if now_kst >= today_19:
+        shift_kst = today_19
+    else:
+        yesterday = today - timedelta(days=1)
+        shift_kst = datetime(yesterday.year, yesterday.month, yesterday.day, SHIFT_HOUR, 0)
+    return shift_kst - timedelta(hours=9)  # KST → UTC
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -181,7 +197,6 @@ def assign_culture_hole(
         hole_code=code,
     )
     db.add(assignment)
-    db.flush()
 
     # 6. Plan 상태 → DONE
     plan.status = "DONE"
@@ -190,7 +205,29 @@ def assign_culture_hole(
     _scan_log(db, accession_no, culture_type, "ASSIGNED",
               f"Hole 번호 발급: {code} (LIS순 {plan.lis_order})",
               client_name, operator_name, workstation_name)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # 다른 PC가 동시에 같은 검체를 먼저 처리한 경우 → DUPLICATE로 반환
+        db.rollback()
+        existing = (
+            db.query(MicroCultureAssignment)
+            .filter(
+                MicroCultureAssignment.accession_no == accession_no,
+                MicroCultureAssignment.culture_type == culture_type,
+            )
+            .first()
+        )
+        _scan_log(db, accession_no, culture_type, "DUPLICATE",
+                  f"동시 처리 감지 — 이미 발급된 Hole 번호: {existing.hole_code if existing else '-'}",
+                  client_name, operator_name, workstation_name)
+        db.commit()
+        return {
+            "status": "DUPLICATE",
+            "message": "다른 PC에서 동시에 처리되었습니다. 이미 발급된 번호를 확인하세요.",
+            "assignment": _assignment_dict(existing) if existing else None,
+            "routing": _micro_context(db, accession_no),
+        }
 
     context = _micro_context(db, accession_no)
     return {
@@ -470,7 +507,6 @@ def auto_assign_culture_hole(
         hole_code=code,
     )
     db.add(assignment)
-    db.flush()
 
     # 8. Plan → DONE
     plan.status = "DONE"
@@ -501,7 +537,40 @@ def auto_assign_culture_hole(
             is_unregistered=False,
         ))
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # 다른 PC가 동시에 같은 검체를 먼저 처리한 경우 → DUPLICATE로 반환
+        db.rollback()
+        existing = (
+            db.query(MicroCultureAssignment)
+            .filter(
+                MicroCultureAssignment.accession_no == accession_no,
+                MicroCultureAssignment.culture_type == culture_type,
+            )
+            .first()
+        )
+        _scan_log(db, accession_no, culture_type, "DUPLICATE",
+                  f"동시 처리 감지 — 이미 발급된 위치: {existing.hole_code if existing else '-'}",
+                  client_name, operator_name, workstation_name)
+        db.commit()
+        dup_rack = existing.rack_no if existing else None
+        dup_pos  = existing.hole_no if existing else None
+        return {
+            "status": "DUPLICATE",
+            "message": f"다른 PC에서 동시에 처리되었습니다. {culture_type} {dup_rack}번 랙 {dup_pos}번 칸",
+            "culture_type": culture_type,
+            "culture_order": plan.lis_order,
+            "rack_no": dup_rack,
+            "rack_position": dup_pos,
+            "hole_code": existing.hole_code if existing else None,
+            "accession_no": accession_no,
+            "patient_name": order.patient_name,
+            "patient_age": order.patient_age,
+            "hospital_name": order.hospital_name,
+            "test_names": matched,
+            "specimen_name": specimen_name,
+        }
 
     base_msg = f"{culture_type}  {rack_no}번 랙 / {rack_pos}번 칸입니다."
     return {
@@ -531,7 +600,7 @@ def get_today_micro_assignments(db: Session) -> list[dict]:
     """오늘 처리된 모든 culture_type의 assignment 목록 — 스캔 작업 목록용"""
     assignments = (
         db.query(MicroCultureAssignment)
-        .filter(MicroCultureAssignment.assigned_at >= _today_start())
+        .filter(MicroCultureAssignment.assigned_at >= _shift_start())
         .order_by(MicroCultureAssignment.assigned_at.asc())
         .all()
     )
@@ -571,6 +640,7 @@ def get_today_micro_assignments(db: Session) -> list[dict]:
             "hospital_name": order.hospital_name if order else None,
             "test_names": matched,
             "specimen_name": specimen,
+            "accession_date": order.accession_date if order else None,
         })
 
     return result

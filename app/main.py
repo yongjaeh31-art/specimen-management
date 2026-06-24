@@ -10,7 +10,26 @@ from app.database import Base, SessionLocal, engine
 from app.models import OrderTest
 from app.routers import auth, imports, micro, reports, scans
 from app.schemas import DEPARTMENT_SUBCATEGORIES, MICRO_CULTURE_TYPES, SPECIMEN_CATEGORIES
+from app.services.auth_service import _hash_password
 from app.services.routing_service import seed_rules
+
+
+def _seed_admin(db) -> None:
+    """최초 실행 시 admin1234 계정이 없으면 자동 생성 (승인 완료 상태)"""
+    from app.models import AppUser
+    from datetime import datetime, timezone
+    existing = db.query(AppUser).filter(AppUser.username == "admin1234").first()
+    if not existing:
+        admin = AppUser(
+            username="admin1234",
+            display_name="관리자",
+            password_hash=_hash_password("admin1234"),
+            is_approved=True,
+            is_active=True,
+            created_at=datetime.now(timezone.utc),
+            approved_at=datetime.now(timezone.utc),
+        )
+        db.add(admin)
 
 
 @asynccontextmanager
@@ -21,6 +40,7 @@ async def lifespan(app: FastAPI):
     try:
         seed_rules(db)
         _migrate_test_names(db)
+        _seed_admin(db)
         db.commit()
     finally:
         db.close()
@@ -60,6 +80,11 @@ def _migrate_test_names(db) -> None:
         {"department_major": "요경검"},
         synchronize_session=False,
     )
+    # Haemophilus ducreyi PCR 학부 → 분자진단으로 보정
+    db.query(OrderTest).filter(OrderTest.test_name.like("%Haemophilus ducreyi PCR%")).update(
+        {"department_major": "분자진단"},
+        synchronize_session=False,
+    )
 
 
 def ensure_schema_columns():
@@ -72,6 +97,7 @@ def ensure_schema_columns():
         "orders": {
             "patient_age": "VARCHAR(40)",
             "hospital_name": "VARCHAR(120)",
+            "accession_date": "VARCHAR(20)",
         },
         "specimen_arrivals": {"workstation_name": "VARCHAR(120)"},
         "scan_logs": {

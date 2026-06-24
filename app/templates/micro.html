@@ -40,7 +40,33 @@
             <div class="fw-bold" style="font-size:.92rem">
               <i class="bi bi-upc-scan me-2 text-primary"></i>자동 소분류 스캔
             </div>
-            <span class="badge text-bg-primary">Auto</span>
+            <div class="d-flex align-items-center gap-2">
+              <button id="ttsToggleBtn" type="button" class="btn btn-sm btn-primary"
+                      title="음성 끄기" onclick="toggleTTS()" style="padding:2px 8px;font-size:.8rem">
+                <i class="bi bi-volume-up-fill"></i>
+              </button>
+              <span class="badge text-bg-primary">Auto</span>
+            </div>
+          </div>
+
+          <!-- 음성 설정 (음성 종류 · 속도) -->
+          <div class="d-flex gap-2 mb-3" style="font-size:.78rem">
+            <div style="flex:1;min-width:0">
+              <label class="form-label mb-1" style="font-size:.74rem;color:#64748b">음성</label>
+              <select id="ttsVoiceSel" class="form-select form-select-sm" style="display:none;font-size:.78rem"
+                      onchange="onVoiceChange(this)"></select>
+              <div id="ttsVoiceNone" class="text-secondary" style="font-size:.74rem">음성 로딩 중…</div>
+            </div>
+            <div style="flex:0 0 90px">
+              <label class="form-label mb-1" style="font-size:.74rem;color:#64748b">속도</label>
+              <select id="ttsRateSel" class="form-select form-select-sm" style="font-size:.78rem"
+                      onchange="onRateChange(this)">
+                <option value="0.9">느리게</option>
+                <option value="1.1">보통</option>
+                <option value="1.3" selected>빠름</option>
+                <option value="1.6">매우 빠름</option>
+              </select>
+            </div>
           </div>
           <div class="row g-2 mb-3">
             <div class="col-6">
@@ -195,6 +221,9 @@
           <button class="btn btn-sm btn-outline-primary" onclick="printCurrent()">
             <i class="bi bi-printer me-1"></i>출력
           </button>
+          <button class="btn btn-sm btn-outline-danger" onclick="resetShift()" title="출근 후 소분류 스캔 전체 초기화">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>리셋
+          </button>
         </div>
       </div>
       <div id="subcategoryPages"></div>
@@ -266,6 +295,9 @@
               <button class="btn btn-sm btn-outline-primary" onclick="printCurrent()">
                 <i class="bi bi-printer me-1"></i>출력
               </button>
+              <button class="btn btn-sm btn-outline-danger" onclick="resetShift()" title="출근 후 소분류 스캔 전체 초기화">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>리셋
+              </button>
             </div>
           </div>
           <div id="nmPages"></div>
@@ -286,6 +318,100 @@
 {% endblock %}
 {% block scripts %}
 <script>
+// ───────────────────────────────────────────────────────────────
+// 음성 안내 (TTS)
+// ───────────────────────────────────────────────────────────────
+let ttsEnabled      = localStorage.getItem("ttsEnabled") !== "false";
+let ttsRate         = parseFloat(localStorage.getItem("ttsRate") || "1.3");
+let ttsSelectedVoice = null;   // SpeechSynthesisVoice 객체
+
+function speak(text) {
+  if (!ttsEnabled || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt  = new SpeechSynthesisUtterance(text);
+  utt.lang   = "ko-KR";
+  utt.rate   = ttsRate;
+  utt.pitch  = 1.0;
+  if (ttsSelectedVoice) utt.voice = ttsSelectedVoice;
+  window.speechSynthesis.speak(utt);
+}
+
+// TTS 발음 보정 — 영문 약어를 한글 발음으로 치환
+function ttsNormalize(text) {
+  return (text || "")
+    .replace(/\bVRE\b/g, "브이알이")
+    .replace(/\bCRE\b/g, "씨알이");
+}
+
+// 랙·칸 번호 한자식(일·이·삼...) 변환 — TTS가 1→"한"으로 읽는 문제 방지
+function toSino(n) {
+  n = parseInt(n);
+  if (isNaN(n) || n < 1) return String(n);
+  const ones = ["","일","이","삼","사","오","육","칠","팔","구"];
+  const tens = ["","십","이십","삼십","사십","오십","육십","칠십","팔십","구십"];
+  if (n < 10)  return ones[n];
+  if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? ones[n%10] : "");
+  return String(n);
+}
+
+// ── 음성 목록 로드 ──
+function _loadVoices() {
+  if (!window.speechSynthesis) return;
+  const voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith("ko"));
+  const sel  = document.getElementById("ttsVoiceSel");
+  const none = document.getElementById("ttsVoiceNone");
+  if (!sel) return;
+
+  if (!voices.length) {
+    if (none) none.textContent = "한국어 음성 없음";
+    return;
+  }
+
+  const saved = localStorage.getItem("ttsVoice");
+  sel.innerHTML = voices.map(v => {
+    const label = v.name.replace(/Microsoft |Google /, "").replace(/ Desktop$/, "");
+    return `<option value="${v.name}" ${v.name === saved ? "selected" : ""}>${label}</option>`;
+  }).join("");
+  sel.style.display = "";
+  if (none) none.style.display = "none";
+
+  ttsSelectedVoice = voices.find(v => v.name === saved) || voices[0];
+}
+window.speechSynthesis && window.speechSynthesis.addEventListener("voiceschanged", _loadVoices);
+
+function onVoiceChange(sel) {
+  const voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith("ko"));
+  ttsSelectedVoice = voices.find(v => v.name === sel.value) || null;
+  localStorage.setItem("ttsVoice", sel.value);
+  speak("일번 랙, 칠번 칸입니다");   // 미리 듣기
+}
+
+function onRateChange(sel) {
+  ttsRate = parseFloat(sel.value);
+  localStorage.setItem("ttsRate", ttsRate);
+  speak("일번 랙, 칠번 칸입니다");   // 미리 듣기
+}
+
+// ── 버튼 상태 동기화 ──
+function _updateTTSBtn() {
+  const btn = document.getElementById("ttsToggleBtn");
+  if (!btn) return;
+  btn.innerHTML = ttsEnabled ? '<i class="bi bi-volume-up-fill"></i>' : '<i class="bi bi-volume-mute-fill"></i>';
+  btn.title     = ttsEnabled ? "음성 끄기" : "음성 켜기";
+  btn.className = `btn btn-sm ${ttsEnabled ? "btn-primary" : "btn-outline-secondary"}`;
+  // 속도 select 초기값
+  const rateSel = document.getElementById("ttsRateSel");
+  if (rateSel) rateSel.value = ttsRate;
+}
+
+function toggleTTS() {
+  ttsEnabled = !ttsEnabled;
+  localStorage.setItem("ttsEnabled", ttsEnabled);
+  _updateTTSBtn();
+}
+
+document.addEventListener("DOMContentLoaded", () => { _updateTTSBtn(); _loadVoices(); });
+
 // ───────────────────────────────────────────────────────────────
 // 데이터 초기화
 // ───────────────────────────────────────────────────────────────
@@ -665,6 +791,7 @@ function renderAutoMicroResult(res) {
           : ""}
       </div>`;
     msg.innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(res.message)}</div>`;
+    speak(res.message || "처리 불가");
     return;
   }
 
@@ -690,6 +817,7 @@ function renderAutoMicroResult(res) {
           : ""}
       </div>`;
     msg.innerHTML = `<div class="alert alert-warning mb-0">${escapeHtml(res.message)}</div>`;
+    speak("복수 소분류 대상입니다. " + (res.culture_types || []).join(", "));
     return;
   }
 
@@ -799,6 +927,13 @@ function renderAutoMicroResult(res) {
     const card = el.firstElementChild;
     if (card) { card.classList.remove("result-flash"); void card.offsetWidth; card.classList.add("result-flash"); }
   }
+
+  // 음성 안내
+  if (isDup) {
+    speak(ttsNormalize(`중복 검체입니다. ${toSino(dispRack)}번 랙, ${toSino(dispPos)}번 칸`));
+  } else {
+    speak(ttsNormalize(`${res.culture_type}, ${toSino(dispRack)}번 랙, ${toSino(dispPos)}번 칸입니다`));
+  }
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -851,6 +986,13 @@ function renderDeptSubResult(res) {
       </div>
     </div>`;
   msg.innerHTML = `<div class="alert alert-${isDup ? "warning" : "success"} mb-0">${escapeHtml(res.message)}</div>`;
+
+  // 음성 안내
+  if (isDup) {
+    speak(`중복 처리입니다. ${escapeHtml(assign.location_code)}`);
+  } else {
+    speak(`${assign.subcategory}, ${assign.location_code}입니다`);
+  }
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -1242,6 +1384,28 @@ function downloadCurrentExcel() {
     downloadExcel(encodeURIComponent("미생물"), null, null);
   } else {
     downloadExcel(encodeURIComponent(activeDept), encodeURIComponent(activeSubcat), null);
+  }
+}
+
+async function resetShift() {
+  const ok = confirm(
+    "⚠️ 리셋 확인\n\n" +
+    "출근(19:00) 이후 소분류·미생물 스캔 데이터가 전부 삭제됩니다.\n" +
+    "계속하시겠습니까?"
+  );
+  if (!ok) return;
+  try {
+    const res = await fetch("/api/micro/reset-shift", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "서버 오류");
+    showToast(
+      "리셋 완료",
+      `소분류 ${data.deleted_dept}건, 미생물 ${data.deleted_micro}건 삭제 (기준: ${data.shift_start_kst})`,
+      "warning"
+    );
+    await loadData();
+  } catch (e) {
+    showToast("오류", "리셋 실패: " + e.message, "danger");
   }
 }
 
