@@ -53,6 +53,8 @@ DEFAULT_ROUTING_RULES = [
 ]
 
 DEFAULT_CULTURE_RULES = [
+    ("외주", "OT"),
+    ("삼광", "SK"),
     ("Urine culture", "U"),
     ("Sputum culture", "SP"),
     ("Stool/Rectal culture", "ST"),

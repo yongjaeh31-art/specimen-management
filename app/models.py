@@ -49,6 +49,7 @@ class Order(Base):
     patient_id: Mapped[str | None] = mapped_column(String(120))
     hospital_name: Mapped[str | None] = mapped_column(String(120))
     specimen_name: Mapped[str | None] = mapped_column(String(120))
+    accession_date: Mapped[str | None] = mapped_column(String(20))
     source_batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batches.id"))
     is_in_final_batch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

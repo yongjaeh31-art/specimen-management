@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from collections import defaultdict
 
 from app.models import DepartmentRoute, ImportBatch, MicroCulturePlan, Order, OrderTest, SpecimenArrival
-from app.services.culture_matcher import infer_micro_culture_types
+from app.services.culture_matcher import infer_culture_type_extended, infer_micro_culture_types
 from app.services.routing_service import build_department_cards, classify_test
 
 
@@ -100,7 +100,30 @@ COLUMN_ALIASES = {
         "\uc804\ub2ec \ud544\uc694",
         "\uc804\ub2ec",
     ],
+    "accession_date": [
+        "accession_date",
+        "\uc811\uc218\uc77c\uc790",
+        "\uc811\uc218\uc77c",
+        "\uc811\uc218 \uc77c\uc790",
+        "\uc811\uc218\uc77c\uc2dc",
+        "\uc218\ud0c1\uc77c\uc790",       # \uc678\uc8fc/\uc218\ud0c1 LIS \uc2dc\uc2a4\ud15c
+        "\uc218\ud0c1\uc77c",
+        "\uc218\ud0c1\uc77c\uc2dc",
+        "\uc758\ub8b0\uc77c\uc790",
+        "\uc758\ub8b0\uc77c",
+        "\ucc98\ubc29\uc77c\uc790",
+        "\ucc98\ubc29\uc77c",
+        "\uac80\uc0ac\uc758\ub8b0\uc77c\uc790",
+        "\uac80\uc0ac\uc758\ub8b0\uc77c",
+        "\uac80\uccb4\uc811\uc218\uc77c\uc790",
+        "\uac80\uccb4\uc811\uc218\uc77c",
+        "\uac80\uccb4\uc811\uc218\uc77c\uc2dc",
+        "date",
+    ],
 }
+
+# \ud30c\uc77c \uba54\ud0c0\ub370\uc774\ud130 \ud589\uc5d0\uc11c \ub0a0\uc9dc \ucd94\ucd9c\uc5d0 \uc0ac\uc6a9
+_FILE_DATE_RE = re.compile(r"(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})")
 
 TEST_KEYWORDS = [
     "culture",
@@ -207,7 +230,23 @@ def _pick_column(row: dict, key: str) -> str | None:
     return None
 
 
-def _read_upload(filename: str, content: bytes) -> pd.DataFrame:
+def _detect_file_date(raw: pd.DataFrame, header_row: int) -> str | None:
+    """
+    헤더 이전 메타데이터 행에서 날짜 패턴 추출.
+    '기간', '접수일자' 같은 타이틀 셀에 날짜가 있는 LIS 파일 대응.
+    """
+    # 헤더 이전 행 우선 탐색
+    for idx in range(header_row):
+        for val in raw.iloc[idx].tolist():
+            m = _FILE_DATE_RE.search(str(val))
+            if m:
+                y, mo, d = m.group(1), m.group(2).zfill(2), m.group(3).zfill(2)
+                return f"{y}-{mo}-{d}"
+    return None
+
+
+def _read_upload(filename: str, content: bytes) -> tuple[pd.DataFrame, str | None]:
+    """업로드 파일을 파싱해 (DataFrame, 파일레벨_날짜) 반환."""
     suffix = filename.lower().rsplit(".", 1)[-1]
     if suffix == "csv":
         raw = pd.read_csv(BytesIO(content), dtype=str, header=None).fillna("")
@@ -219,10 +258,11 @@ def _read_upload(filename: str, content: bytes) -> pd.DataFrame:
         raise ValueError("CSV, XLSX, XLS files can be uploaded.")
 
     header_row = _find_header_row(raw)
+    file_date = _detect_file_date(raw, header_row)
     headers = [_clean_cell(value) or f"col_{idx + 1}" for idx, value in enumerate(raw.iloc[header_row].tolist())]
     df = raw.iloc[header_row + 1 :].copy()
     df.columns = headers
-    return df.dropna(how="all").fillna("")
+    return df.dropna(how="all").fillna(""), file_date
 
 
 def _find_header_row(raw: pd.DataFrame) -> int:
@@ -307,7 +347,7 @@ def _collect_test_names(row: dict) -> list[str]:
 
 
 def import_orders(db: Session, filename: str, content: bytes, batch_type: str, is_final: bool) -> dict:
-    df = _read_upload(filename, content)
+    df, file_date = _read_upload(filename, content)
     if df.empty:
         raise ValueError("The upload file has no data.")
 
@@ -344,6 +384,14 @@ def import_orders(db: Session, filename: str, content: bytes, batch_type: str, i
         order.patient_id = _clean_cell(_pick(first, "patient_id") or order.patient_id or "") or None
         order.hospital_name = _clean_cell(_pick(first, "hospital_name") or order.hospital_name or "") or None
         order.specimen_name = _clean_cell(_pick(first, "specimen_name") or order.specimen_name or "") or None
+        raw_date = _pick(first, "accession_date")
+        if raw_date:
+            date_str = _clean_cell(str(raw_date))
+            # "2026-06-16 00:00:00" → "2026-06-16"
+            order.accession_date = date_str[:10] if len(date_str) >= 10 else date_str or None
+        elif file_date and not order.accession_date:
+            # 행 단위 날짜 컬럼 없을 때 파일 레벨 날짜 사용 (헤더/제목 행에서 추출)
+            order.accession_date = file_date
         order.source_batch_id = batch.id
         if is_final:
             order.is_in_final_batch = True
@@ -436,7 +484,9 @@ def _rebuild_micro_culture_plans(db: Session, batch_id: int, accession_nos: list
         test_names = [t.test_name for t in tests]
         if not test_names:
             continue
-        culture_types = infer_micro_culture_types(test_names, order.specimen_name)
+        culture_types = infer_culture_type_extended(
+            accno, test_names, order.specimen_name, order.hospital_name
+        )
         for ct in culture_types:
             # 이미 DONE인 경우 제외
             already_done = db.query(MicroCulturePlan).filter(

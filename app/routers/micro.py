@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
 from math import ceil
 
@@ -11,13 +11,13 @@ from openpyxl.worksheet.pagebreak import Break
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import MicroCultureAssignment, MicroCulturePlan
+from app.models import DepartmentSubcategoryAssignment, MicroCultureAssignment, MicroCulturePlan
 from app.schemas import (
     AutoCultureScanRequest, CultureScanRequest,
     DEPARTMENT_SUBCATEGORIES, MICRO_CULTURE_TYPES, SubdivisionScanRequest,
 )
 from app.services.micro_service import (
-    _assignment_dict, _today_start,
+    _assignment_dict, _shift_start, _today_start,
     assign_culture_hole,
     auto_assign_culture_hole,
     get_culture_plan_list,
@@ -139,13 +139,56 @@ def subcategory_assignments(db: Session = Depends(get_db)):
     return combined_assignments(db)
 
 
+@router.post("/reset-shift")
+def reset_shift(db: Session = Depends(get_db)):
+    """출근 기준(KST 19:00) 이후 소분류 스캔 전체 초기화"""
+    since = _shift_start()
+
+    # 미생물 배정 삭제 + plan PENDING 복원
+    micro_list = (
+        db.query(MicroCultureAssignment)
+        .filter(MicroCultureAssignment.assigned_at >= since)
+        .all()
+    )
+    for asn in micro_list:
+        plan = (
+            db.query(MicroCulturePlan)
+            .filter(
+                MicroCulturePlan.accession_no == asn.accession_no,
+                MicroCulturePlan.culture_type == asn.culture_type,
+                MicroCulturePlan.assignment_id == asn.id,
+            )
+            .first()
+        )
+        if plan:
+            plan.status = "PENDING"
+            plan.assignment_id = None
+        db.delete(asn)
+
+    # 비미생물 소분류 배정 삭제
+    dept_count = (
+        db.query(DepartmentSubcategoryAssignment)
+        .filter(DepartmentSubcategoryAssignment.assigned_at >= since)
+        .delete(synchronize_session=False)
+    )
+
+    db.commit()
+    kst = since + timedelta(hours=9)
+    return {
+        "status": "OK",
+        "shift_start_kst": kst.strftime("%Y-%m-%d %H:%M"),
+        "deleted_micro": len(micro_list),
+        "deleted_dept": dept_count,
+    }
+
+
 @router.get("/worklist/export")
 def export_worklist(db: Session = Depends(get_db)):
     """오늘 스캔 완료 목록 → {소분류} 워크리스트 (첨부 서식 그대로, 25행/페이지, LIS순)"""
     from openpyxl.styles import Color as XLColor
 
     assignments = get_today_micro_assignments(db)
-    today_str = date.today().strftime("%Y-%m-%d")
+    fallback_date = date.today().strftime("%Y-%m-%d")
 
     # 소분류별 그룹핑 → LIS 순번(culture_order) 오름차순
     groups: dict[str, list] = {}
@@ -227,8 +270,12 @@ def export_worklist(db: Session = Depends(get_db)):
 
                 # ── 행2: 접수일자(좌) + 페이지(우) ──────────────────────
                 r2 = base + 1
+                # 접수일자: 해당 페이지 데이터의 실제 날짜 범위
+                dates = [r.get("accession_date") for r in page_rows if r.get("accession_date")]
+                date_min = min(dates) if dates else fallback_date
+                date_max = max(dates) if dates else fallback_date
                 ws.merge_cells(start_row=r2, start_column=1, end_row=r2, end_column=4)
-                c = ws.cell(r2, 1, f"접수일자 :   {today_str}  ~  {today_str}")
+                c = ws.cell(r2, 1, f"접수일자 :   {date_min}  ~  {date_max}")
                 c.font      = Font(name="굴림", size=9)
                 c.alignment = Alignment(vertical="center")
                 ws.merge_cells(start_row=r2, start_column=5, end_row=r2, end_column=NCOLS)
@@ -292,8 +339,7 @@ def export_subcategory_assignments(
     page_no: int | None = None,
     db: Session = Depends(get_db),
 ):
-    from datetime import date as _date
-    rows = combined_assignments(db)
+    rows = combined_assignments(db, from_date=_shift_start())
     if department_name:
         rows = [row for row in rows if row["department_name"] == department_name]
     if subcategory:
@@ -303,12 +349,12 @@ def export_subcategory_assignments(
 
     workbook = Workbook()
     workbook.remove(workbook.active)
-    today_str = _date.today().strftime("%Y-%m-%d")
+    fallback_date_str = date.today().strftime("%Y-%m-%d")
 
-    # 25컬럼 너비 (참조 서식 기준)
-    COL_WIDTHS = [4.57, 9.14, 0.14, 5.0, 5.29, 1.14, 4.43, 0.14, 4.14, 2.0,
-                  11.71, 0.86, 0.71, 0.14, 5.57, 4.43, 8.57, 3.43, 6.86, 6.43,
-                  4.43, 1.29, 11.71, 2.14, 3.71]
+    # 25컬럼 너비 (출력예시.xlsx 서식 기준)
+    COL_WIDTHS = [4.5625, 9.125, 0.125, 5.0, 5.3125, 1.125, 4.4375, 0.125, 4.125, 2.0,
+                  11.6875, 0.875, 0.6875, 0.125, 5.5625, 4.4375, 8.5625, 3.4375, 6.875,
+                  6.4375, 4.4375, 1.3125, 11.6875, 2.125, 3.6875]
     # 검체 1건당 6행 구조의 행 높이
     REC_HEIGHTS = [9.75, 0.75, 1.5, 12.75, 1.5, 1.5]
     FONT        = "맑은 고딕"
@@ -323,7 +369,7 @@ def export_subcategory_assignments(
             left=b.left, right=b.right,
         )
 
-    def _build_sheet(ws, dept, subcat, grp_rows):
+    def _build_sheet(ws, dept, subcat, grp_rows, _fallback=fallback_date_str):
         ws.page_setup.paperSize  = 9
         ws.page_setup.orientation = "portrait"
         ws.page_margins.left     = 0.5
@@ -337,17 +383,17 @@ def export_subcategory_assignments(
 
         # ── 행1: 타이틀 ───────────────────────────────────────────────
         ws.row_dimensions[1].height = 27.75
-        ws.merge_cells("E1:U1")
+        ws.merge_cells("E1:U1")        # cols 5-21 (25열 기준)
         tc = ws.cell(1, 5, "워크리스트")
         tc.font      = Font(name=FONT, size=20, bold=True)
         tc.alignment = Alignment(horizontal="center", vertical="center")
 
         # ── 행2: 주 헤더 (병합 → 스타일) ─────────────────────────────
         ws.row_dimensions[2].height = 12.75
-        ws.merge_cells("C2:E2")
-        ws.merge_cells("F2:J2")
-        ws.merge_cells("K2:M2")
-        ws.merge_cells("N2:X2")
+        ws.merge_cells("C2:E2")        # 수진자명 cols 3-5
+        ws.merge_cells("F2:J2")        # 병리번호 cols 6-10
+        ws.merge_cells("K2:M2")        # 거래처명 cols 11-13
+        ws.merge_cells("N2:X2")        # 검사명 cols 14-24
         for col, label in [(1,"순번"),(2,"접수일자"),(3,"수진자명"),
                            (6,"병리번호"),(11,"거래처명"),(14,"검사명"),(25,"건수")]:
             c = ws.cell(2, col, label)
@@ -357,9 +403,9 @@ def export_subcategory_assignments(
         # ── 행3: 보조 헤더 (병합 → 스타일 → 하단 medium 선) ─────────
         ws.row_dimensions[3].height = 13.5
         ws.merge_cells("C3:E3")
-        ws.merge_cells("F3:J3")
-        ws.merge_cells("K3:M3")
-        ws.merge_cells("N3:X3")
+        ws.merge_cells("F3:J3")        # 수탁바코드 cols 6-10
+        ws.merge_cells("K3:M3")        # cols 11-13
+        ws.merge_cells("N3:X3")        # cols 14-24
         for col, label in [(2,"등록번호"),(3,"생년월일"),(6,"수탁바코드")]:
             c = ws.cell(3, col, label)
             c.font      = Font(name=FONT, size=8, color="808080")
@@ -375,18 +421,18 @@ def export_subcategory_assignments(
             for ri, h in enumerate(REC_HEIGHTS):
                 ws.row_dimensions[R + ri].height = h
 
-            # ① 병합 먼저
-            ws.merge_cells(start_row=R,   start_column=1,  end_row=R+3, end_column=1)
-            ws.merge_cells(start_row=R,   start_column=2,  end_row=R+1, end_column=3)
-            ws.merge_cells(start_row=R,   start_column=4,  end_row=R+2, end_column=5)
-            ws.merge_cells(start_row=R,   start_column=6,  end_row=R+1, end_column=10)
-            ws.merge_cells(start_row=R,   start_column=11, end_row=R+3, end_column=14)
-            ws.merge_cells(start_row=R,   start_column=15, end_row=R,   end_column=23)
-            ws.merge_cells(start_row=R+1, start_column=15, end_row=R+3, end_column=23)
-            ws.merge_cells(start_row=R,   start_column=25, end_row=R+3, end_column=25)
-            ws.merge_cells(start_row=R+3, start_column=2,  end_row=R+4, end_column=3)
-            ws.merge_cells(start_row=R+3, start_column=4,  end_row=R+4, end_column=5)
-            ws.merge_cells(start_row=R+3, start_column=6,  end_row=R+4, end_column=10)
+            # ① 병합 먼저 (출력예시.xlsx 25열 구조)
+            ws.merge_cells(start_row=R,   start_column=1,  end_row=R+3, end_column=1)   # A    순번
+            ws.merge_cells(start_row=R,   start_column=2,  end_row=R+1, end_column=3)   # BC   접수일자
+            ws.merge_cells(start_row=R,   start_column=4,  end_row=R+2, end_column=5)   # DE   수진자명
+            ws.merge_cells(start_row=R,   start_column=6,  end_row=R+1, end_column=10)  # F-J  병리번호
+            ws.merge_cells(start_row=R,   start_column=11, end_row=R+3, end_column=14)  # K-N  거래처명
+            ws.merge_cells(start_row=R,   start_column=15, end_row=R,   end_column=23)  # O-W  검사명
+            ws.merge_cells(start_row=R+1, start_column=15, end_row=R+3, end_column=23)  # O-W  검체명
+            ws.merge_cells(start_row=R,   start_column=25, end_row=R+3, end_column=25)  # Y    건수
+            ws.merge_cells(start_row=R+3, start_column=2,  end_row=R+4, end_column=3)   # BC   등록번호
+            ws.merge_cells(start_row=R+3, start_column=4,  end_row=R+4, end_column=5)   # DE   생년월일
+            ws.merge_cells(start_row=R+3, start_column=6,  end_row=R+4, end_column=10)  # F-J  수탁바코드
 
             seq   = row.get("group_item_no") or (idx + 1)
             pname = row.get("patient_name") or ""
@@ -395,6 +441,7 @@ def export_subcategory_assignments(
             tests = ", ".join(row.get("test_names") or [])
             spec  = row.get("specimen_name") or ""
             accno = row.get("accession_no") or ""
+            acc_date = row.get("accession_date") or _fallback
 
             def _c(r, col, val, bold=False, size=8, halign="left", valign="top", border=None):
                 cell = ws.cell(r, col, val)
@@ -404,20 +451,24 @@ def export_subcategory_assignments(
                     cell.border = border
                 return cell
 
-            # ② 병합 후 스타일/값 적용
+            # ② 병합 후 스타일/값 적용 (출력예시.xlsx 25열 구조)
             _c(R,   1,  seq,      halign="left")
-            _c(R,   2,  today_str)
+            _c(R,   2,  acc_date)
             _c(R,   4,  pname,    bold=True)
-            _c(R,   6,  "",       bold=True, size=9)   # 병리번호 공란
-            _c(R,   11, hosp)
-            _c(R,   15, tests,    border=dotted_left)
-            _c(R,   25, 1,        halign="right")
-            _c(R+1, 15, spec,     size=6,  border=dotted_left)
+            _c(R,   6,  "",       size=8)              # 병리번호 공란
+            _c(R,   11, hosp)                          # 거래처명 col 11
+            _c(R,   15, tests,    border=dotted_left)  # 검사명 col 15
+            _c(R,   25, 1,        halign="right")      # 건수 col 25
+            _c(R+1, 15, spec,     size=6, border=dotted_left)  # 검체명 col 15
             # R+2, R+3 col15는 O{R+1}:W{R+3} 병합 보조셀 → 값/테두리 직접 설정 불가
-            # top-left(R+1,15)의 left=dotted 테두리가 병합 전체 높이에 렌더링됨
             _c(R+3, 2,  accno)
             _c(R+3, 4,  page,     bold=True)
             _c(R+3, 6,  "",       size=8)              # 수탁바코드 공란
+            # 레코드 구분선: R+5(spacer) 상단 = 레코드 블록 하단에 medium 선 전체 적용
+            # R+5는 병합이 없는 spacer 행이므로 모든 열에 border 설정 가능
+            top_sep = Border(top=medium_bot)
+            for _sc in range(1, 26):
+                ws.cell(R + 5, _sc).border = top_sep
 
     if not rows:
         ws = workbook.create_sheet("소분류")

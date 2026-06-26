@@ -215,7 +215,7 @@ def assign_department_subcategory(
     return {"status": "ASSIGNED", "message": "위치 번호가 발급되었습니다.", "assignment": _assignment_dict(assignment)}
 
 
-def combined_assignments(db: Session) -> list[dict]:
+def combined_assignments(db: Session, from_date=None) -> list[dict]:
     orders = {row.accession_no: row for row in db.query(Order).all()}
     order_sort = {accession_no: order.id for accession_no, order in orders.items()}
     order_ids = [order.id for order in orders.values()]
@@ -229,14 +229,20 @@ def combined_assignments(db: Session) -> list[dict]:
     def _names(order_id: int) -> list[str]:
         return [n for n, _ in tests_full_by_order.get(order_id, [])]
 
+    micro_q = db.query(MicroCultureAssignment)
+    dept_q  = db.query(DepartmentSubcategoryAssignment)
+    if from_date is not None:
+        micro_q = micro_q.filter(MicroCultureAssignment.assigned_at >= from_date)
+        dept_q  = dept_q.filter(DepartmentSubcategoryAssignment.assigned_at >= from_date)
+
     micro_rows = (
-        db.query(MicroCultureAssignment)
+        micro_q
         .order_by(MicroCultureAssignment.assigned_at.asc(), MicroCultureAssignment.id.asc())
         .limit(2000)
         .all()
     )
     dept_rows = (
-        db.query(DepartmentSubcategoryAssignment)
+        dept_q
         .order_by(DepartmentSubcategoryAssignment.assigned_at.asc(), DepartmentSubcategoryAssignment.id.asc())
         .limit(2000)
         .all()
@@ -270,6 +276,7 @@ def combined_assignments(db: Session) -> list[dict]:
         row["patient_id"] = order.patient_id if order else None
         row["hospital_name"] = order.hospital_name if order else None
         row["specimen_name"] = order.specimen_name if order else None
+        row["accession_date"] = order.accession_date if order else None
         # ── 담당 학부·소분류에 맵핑된 검사명만 표시 ──────────────────────────
         row["test_names"] = _filter_tests_for_row(
             tests_full_by_order.get(order.id, []) if order else [],

@@ -99,3 +99,75 @@ def is_matching_micro_culture(test_names: list[str], specimen_name: str | None, 
             for name in test_names
         )
     return False
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 외주 / 삼광 확장 분류 규칙
+# ──────────────────────────────────────────────────────────────────────────────
+
+OUTSOURCE_CODES = {"11", "12", "43", "45"}
+
+OUTSOURCE_EXCLUDED_HOSPITALS = {
+    "아인병원",
+    "금천수병원",
+    "삼성장편한내과",
+    "브라운소아청소년과의원",
+    "황창연내과",
+    "원주센텀병원",
+    "예손병원",
+}
+
+SAMKWANG_HOSPITAL = "연세지안비뇨의학과"
+
+
+def get_classification_code(accession_no: str) -> str:
+    """접수번호 앞 2자리 숫자 분류코드 반환. 2자리 미만이거나 숫자가 아니면 빈 문자열."""
+    s = (accession_no or "").strip()
+    prefix = s[:2]
+    return prefix if len(prefix) == 2 and prefix.isdigit() else ""
+
+
+def _has_ordinary_disk(test_names: list[str]) -> bool:
+    """검사명 중 'Ordinary culture & Sensitivity (disk)' 포함 여부 확인."""
+    for name in test_names:
+        n = normalize_text(name)
+        # normalize 후: "ordinaryculture" + "sensitivity" + "disk" 세 키워드 모두 포함 시 매칭
+        if "ordinaryculture" in n and "sensitivity" in n and "disk" in n:
+            return True
+    return False
+
+
+def infer_culture_type_extended(
+    accession_no: str,
+    test_names: list[str],
+    specimen_name: str | None,
+    hospital_name: str | None,
+) -> list[str]:
+    """
+    기존 infer_micro_culture_types에 외주·삼광 규칙을 추가한 확장 분류 함수.
+
+    우선순위:
+      1. 검사명에 Ordinary culture & Sensitivity (disk) 포함 → 삼광
+      2. 분류코드 76 + 연세지안비뇨의학과 + Urine → 삼광
+      3. 외주 제외 병원 여부 확인
+      4. 분류코드 11·12·43·45 → 외주
+      5. 기존 infer_micro_culture_types 매핑
+    """
+    # 1. Ordinary disk culture → 삼광
+    if _has_ordinary_disk(test_names):
+        return ["삼광"]
+
+    code = get_classification_code(accession_no)
+    hosp = (hospital_name or "").strip()
+    sp = normalize_text(specimen_name)
+
+    # 2. 분류코드 76 + 연세지안비뇨의학과 + Urine → 삼광
+    if code == "76" and hosp == SAMKWANG_HOSPITAL and "urine" in sp:
+        return ["삼광"]
+
+    # 3·4. 외주 분류코드 체크 (제외 병원은 기존 매핑으로 pass-through)
+    if code in OUTSOURCE_CODES and hosp not in OUTSOURCE_EXCLUDED_HOSPITALS:
+        return ["외주"]
+
+    # 5. 기존 매핑
+    return infer_micro_culture_types(test_names, specimen_name)

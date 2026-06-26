@@ -16,6 +16,8 @@ DEPARTMENT_MAJORS = [
     "기타/확인필요",
 ]
 MICRO_CULTURE_TYPES = [
+    "외주",
+    "삼광",
     "Urine culture",
     "Sputum culture",
     "Stool/Rectal culture",

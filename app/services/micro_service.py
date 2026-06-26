@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import CultureRule, MicroCultureAssignment, MicroCulturePlan, Order, OrderTest, ScanLog, SpecimenArrival
-from app.services.culture_matcher import infer_culture_for_test, infer_micro_culture_types, normalize_text
+from app.services.culture_matcher import infer_culture_for_test, infer_culture_type_extended, infer_micro_culture_types, normalize_text
 from app.services.scan_service import MICRO_DEPARTMENT, _order_payload, find_order_by_accession, has_arrived
 
 RACK_SIZE = 50  # 50칸 스폰지랙
@@ -397,8 +397,10 @@ def auto_assign_culture_hole(
             "test_names": test_names,
         }
 
-    # 2. culture_type 자동 판정
-    culture_types = infer_micro_culture_types(test_names, specimen_name)
+    # 2. culture_type 자동 판정 (외주·삼광 규칙 포함)
+    culture_types = infer_culture_type_extended(
+        accession_no, test_names, specimen_name, order.hospital_name
+    )
 
     if not culture_types:
         departments = {t.department_major for t in order.tests}
