@@ -97,9 +97,11 @@ def culture_types():
 
 
 @router.get("/culture-plans")
-def culture_plans(culture_type: str, db: Session = Depends(get_db)):
-    """선택한 culture_type의 예정 목록(PENDING) + 완료 목록(DONE) 조회"""
-    return get_culture_plan_list(db, culture_type)
+def culture_plans(culture_type: str, full: bool = False, db: Session = Depends(get_db)):
+    """선택한 culture_type의 예정 목록(PENDING) + 완료 목록(DONE) 조회
+    full=False(기본): 남은 목록 최대 30건만 반환 (주기 새로고침용 경량 응답)
+    full=True: 남은 목록 전체 반환 (펼쳐보기용)"""
+    return get_culture_plan_list(db, culture_type, full=full)
 
 
 @router.get("/culture-assignments")

@@ -1343,9 +1343,11 @@ async function loadData() {
   }
 }
 
-async function loadMicroPlans(cultureType) {
+let pendingPanelOpen = false;
+
+async function loadMicroPlans(cultureType, full = pendingPanelOpen) {
   try {
-    const data = await fetchJson(`/api/micro/culture-plans?culture_type=${encodeURIComponent(cultureType)}`);
+    const data = await fetchJson(`/api/micro/culture-plans?culture_type=${encodeURIComponent(cultureType)}&full=${full}`);
     planData = data;
     updateProgress(data);
     renderRackUI(data, currentDisplayRackNo, lastHighlightPos);
@@ -1471,5 +1473,17 @@ initRackSizeButtons();
 if (!isMicro()) updateNonMicroDisplay();
 loadData();
 setInterval(loadData, 8000);
+
+// 남은 예정 목록 패널을 펼쳤을 때만 전체 목록 조회 (평소 8초 주기 갱신은 30건만 가볍게)
+const pendingCollapseEl = document.getElementById("pendingCollapse");
+if (pendingCollapseEl) {
+  pendingCollapseEl.addEventListener("show.bs.collapse", () => {
+    pendingPanelOpen = true;
+    if (isMicro()) loadMicroPlans(activeSubcat, true);
+  });
+  pendingCollapseEl.addEventListener("hide.bs.collapse", () => {
+    pendingPanelOpen = false;
+  });
+}
 </script>
 {% endblock %}

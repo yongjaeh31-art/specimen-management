@@ -243,7 +243,10 @@ def assign_culture_hole(
 # 예정 목록 / 스캔 완료 목록 조회
 # ──────────────────────────────────────────────────────────────────────────────
 
-def get_culture_plan_list(db: Session, culture_type: str) -> dict:
+PENDING_LIST_LIMIT = 30
+
+
+def get_culture_plan_list(db: Session, culture_type: str, full: bool = False) -> dict:
     """선택한 culture_type의 오늘 예정 목록(PENDING) + 오늘 완료 목록(DONE) 반환"""
     plans = (
         db.query(MicroCulturePlan)
@@ -338,7 +341,7 @@ def get_culture_plan_list(db: Session, culture_type: str) -> dict:
         "total": total,
         "done": done_count,
         "pending": pending_count,
-        "pending_list": pending,         # 화면 표시용: 전체 목록 (스크롤로 확인)
+        "pending_list": pending if full else pending[:PENDING_LIST_LIMIT],  # full=True일 때만 전체 목록
         "pending_total": pending_count,  # 실제 남은 건수 (배지 표시용)
         "done_list": done_sorted_by_scan,
     }
