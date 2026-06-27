@@ -338,7 +338,7 @@ def get_culture_plan_list(db: Session, culture_type: str) -> dict:
         "total": total,
         "done": done_count,
         "pending": pending_count,
-        "pending_list": pending[:30],    # 화면 표시용: 최대 30개
+        "pending_list": pending,         # 화면 표시용: 전체 목록 (스크롤로 확인)
         "pending_total": pending_count,  # 실제 남은 건수 (배지 표시용)
         "done_list": done_sorted_by_scan,
     }

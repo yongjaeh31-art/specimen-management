@@ -27,8 +27,8 @@ def infer_culture_for_test(test_name: str, specimen_name: str | None = None) -> 
     if "gbs" in n and ("culture" in n or "배양" in n or "sensitivity" in n):
         return "산전 GBS 배양검사"
 
-    # Mycoplasma / Ureaplasma
-    if "mycoplasma" in n or "ureaplasma" in n:
+    # Mycoplasma / Ureaplasma — Culture 검사명만 포함 (PCR 등 제외)
+    if ("mycoplasma" in n or "ureaplasma" in n) and ("culture" in n or "배양" in n):
         return "Mycoplasma & Ureaplasma Culture"
 
     # CRE / VRE — 검사명에 명시된 경우 검체명 무관
@@ -106,6 +106,7 @@ def is_matching_micro_culture(test_names: list[str], specimen_name: str | None, 
 # ──────────────────────────────────────────────────────────────────────────────
 
 OUTSOURCE_CODES = {"11", "12", "43", "45"}
+OUTSOURCE_CODE_76 = "76"
 
 OUTSOURCE_EXCLUDED_HOSPITALS = {
     "아인병원",
@@ -118,6 +119,9 @@ OUTSOURCE_EXCLUDED_HOSPITALS = {
 }
 
 SAMKWANG_HOSPITAL = "연세지안비뇨의학과"
+
+OUTSOURCE_CODE_14 = "14"
+YESON_HOSPITAL = "예손병원"
 
 
 def get_classification_code(accession_no: str) -> str:
@@ -148,10 +152,14 @@ def infer_culture_type_extended(
 
     우선순위:
       1. 검사명에 Ordinary culture & Sensitivity (disk) 포함 → 삼광
-      2. 분류코드 76 + 연세지안비뇨의학과 + Urine → 삼광
-      3. 외주 제외 병원 여부 확인
-      4. 분류코드 11·12·43·45 → 외주
-      5. 기존 infer_micro_culture_types 매핑
+      2. 분류코드 14 + 예손병원 → 외주 (외주 제외 병원 규칙보다 우선)
+      3. 분류코드 76:
+         a. 연세지안비뇨의학과 + Urine → 삼광
+         b. 연세지안비뇨의학과 + Urine 아님 → 기존 매핑 (외주 제외)
+         c. 그 외 병원 → 외주
+      4. 외주 제외 병원 여부 확인
+      5. 분류코드 11·12·43·45 → 외주
+      6. 기존 infer_micro_culture_types 매핑
     """
     # 1. Ordinary disk culture → 삼광
     if _has_ordinary_disk(test_names):
@@ -161,13 +169,21 @@ def infer_culture_type_extended(
     hosp = (hospital_name or "").strip()
     sp = normalize_text(specimen_name)
 
-    # 2. 분류코드 76 + 연세지안비뇨의학과 + Urine → 삼광
-    if code == "76" and hosp == SAMKWANG_HOSPITAL and "urine" in sp:
-        return ["삼광"]
+    # 2. 분류코드 14 + 예손병원 → 외주 (외주 제외 병원 규칙보다 우선 적용)
+    if code == OUTSOURCE_CODE_14 and hosp == YESON_HOSPITAL:
+        return ["외주"]
 
-    # 3·4. 외주 분류코드 체크 (제외 병원은 기존 매핑으로 pass-through)
+    # 3. 분류코드 76 전용 규칙
+    if code == OUTSOURCE_CODE_76:
+        if hosp == SAMKWANG_HOSPITAL:
+            if "urine" in sp:
+                return ["삼광"]
+            return infer_micro_culture_types(test_names, specimen_name)
+        return ["외주"]
+
+    # 4·5. 외주 분류코드 체크 (제외 병원은 기존 매핑으로 pass-through)
     if code in OUTSOURCE_CODES and hosp not in OUTSOURCE_EXCLUDED_HOSPITALS:
         return ["외주"]
 
-    # 5. 기존 매핑
+    # 6. 기존 매핑
     return infer_micro_culture_types(test_names, specimen_name)

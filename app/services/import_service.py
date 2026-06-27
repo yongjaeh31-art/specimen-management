@@ -6,7 +6,17 @@ from sqlalchemy.orm import Session
 
 from collections import defaultdict
 
-from app.models import DepartmentRoute, ImportBatch, MicroCulturePlan, Order, OrderTest, SpecimenArrival
+from app.models import (
+    DepartmentRoute,
+    DepartmentSubcategoryAssignment,
+    ImportBatch,
+    MicroCultureAssignment,
+    MicroCulturePlan,
+    Order,
+    OrderTest,
+    ScanLog,
+    SpecimenArrival,
+)
 from app.services.culture_matcher import infer_culture_type_extended, infer_micro_culture_types
 from app.services.routing_service import build_department_cards, classify_test
 
@@ -508,3 +518,21 @@ def _rebuild_micro_culture_plans(db: Session, batch_id: int, accession_nos: list
                 lis_order=lis_idx,
                 status="PENDING",
             ))
+
+
+def reset_all_data(db: Session) -> dict:
+    """업로드된 접수리스트 및 관련 데이터 전체 초기화 (분류 규칙·사용자 계정 등 설정은 유지)."""
+    counts = {
+        "orders": db.query(Order).count(),
+        "scan_logs": db.query(ScanLog).delete(synchronize_session=False),
+        "micro_culture_assignments": db.query(MicroCultureAssignment).delete(synchronize_session=False),
+        "micro_culture_plans": db.query(MicroCulturePlan).delete(synchronize_session=False),
+        "department_subcategory_assignments": db.query(DepartmentSubcategoryAssignment).delete(synchronize_session=False),
+        "department_routes": db.query(DepartmentRoute).delete(synchronize_session=False),
+        "specimen_arrivals": db.query(SpecimenArrival).delete(synchronize_session=False),
+        "import_batches": db.query(ImportBatch).count(),
+    }
+    db.query(Order).delete(synchronize_session=False)  # cascade → OrderTest 자동 삭제
+    db.query(ImportBatch).delete(synchronize_session=False)
+    db.commit()
+    return counts

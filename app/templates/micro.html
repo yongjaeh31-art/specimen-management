@@ -185,13 +185,14 @@
         <i class="bi bi-chevron-down"></i>
       </button>
       <div class="collapse" id="pendingCollapse">
-        <div class="table-responsive mt-2">
+        <div class="table-responsive mt-2" style="max-height:480px;overflow-y:auto">
           <table class="table table-sm table-hover align-middle mb-0" style="font-size:.82rem">
             <thead>
               <tr>
                 <th style="width:58px" class="text-center">소분류순</th>
                 <th>접수번호</th>
                 <th>성명/나이</th>
+                <th>병원명</th>
                 <th>검사명</th>
                 <th>검체명</th>
               </tr>
@@ -339,6 +340,8 @@ function speak(text) {
 // TTS 발음 보정 — 영문 약어를 한글 발음으로 치환
 function ttsNormalize(text) {
   return (text || "")
+    .replace(/Mycoplasma & Ureaplasma Culture/g, "Mycoplasma")
+    .replace(/산전 GBS 배양검사/g, "GBS 배양검사")
     .replace(/\bVRE\b/g, "브이알이")
     .replace(/\bCRE\b/g, "씨알이");
 }
@@ -1147,13 +1150,14 @@ function updateProgress(data) {
 
   const tbody = document.getElementById("pendingRows");
   if (!data.pending_list?.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary py-3">남은 예정 검체가 없습니다.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center text-secondary py-3">남은 예정 검체가 없습니다.</td></tr>`;
   } else {
     tbody.innerHTML = data.pending_list.map(r => `
       <tr>
         <td class="text-center fw-bold">${r.lis_order}</td>
         <td class="font-monospace">${escapeHtml(r.accession_no)}</td>
         <td>${escapeHtml(patientText(r))}</td>
+        <td>${escapeHtml(r.hospital_name || "")}</td>
         <td class="text-start">${escapeHtml((r.test_names||[]).join(", "))}</td>
         <td>${escapeHtml(r.specimen_name || "")}</td>
       </tr>`).join("");
