@@ -17,7 +17,7 @@ from app.models import (
     ScanLog,
     SpecimenArrival,
 )
-from app.services.culture_matcher import infer_culture_type_extended, infer_micro_culture_types
+from app.services.culture_matcher import classify_order_culture_types, infer_culture_type_extended, infer_micro_culture_types
 from app.services.routing_service import build_department_cards, classify_test
 
 
@@ -345,9 +345,13 @@ def _collect_test_names(row: dict) -> list[str]:
             continue
 
         # Worklists often store one accession per row and then several test-name
-        # cells to the right of the first test. Capture those trailing test cells.
+        # cells to the right of the first test. Capture those trailing test cells —
+        # but only if the column/value actually looks like a test, otherwise
+        # unrelated trailing columns (hospital, gender, region, datetime 등) get
+        # misread as test names.
         if primary_idx is not None and idx > primary_idx and not value.isdigit():
-            add_test(value)
+            if _is_test_column(column_name) or _looks_like_test_value(value):
+                add_test(value)
             continue
 
         if _is_test_column(column_name) or _looks_like_test_value(value):
@@ -356,7 +360,14 @@ def _collect_test_names(row: dict) -> list[str]:
     return tests or ["검사항목 미입력"]
 
 
-def import_orders(db: Session, filename: str, content: bytes, batch_type: str, is_final: bool) -> dict:
+def import_orders(
+    db: Session,
+    filename: str,
+    content: bytes,
+    batch_type: str,
+    is_final: bool,
+    workday_type: str = "weekday",
+) -> dict:
     df, file_date = _read_upload(filename, content)
     if df.empty:
         raise ValueError("The upload file has no data.")
@@ -414,6 +425,10 @@ def import_orders(db: Session, filename: str, content: bytes, batch_type: str, i
             aliquot_flag = _truthy(_pick(row, "aliquot_required"))
             transfer_flag = _truthy(_pick(row, "transfer_required"))
             test_code = _clean_cell(_pick(row, "test_code") or "") or None
+            # 한 접수번호에 행마다 검체가 다른 경우(예: 일반 소변배양 + CRE 직장도자) 대응:
+            # 이 행의 검체명이 접수 단위 검체명과 다르면 검사별 override로 저장
+            row_specimen = _clean_cell(_pick(row, "specimen_name") or "") or None
+            specimen_override = row_specimen if row_specimen and row_specimen != order.specimen_name else None
 
             for test_name in _collect_test_names(row):
                 department, aliquot_by_rule, transfer_by_rule = classify_test(db, test_name, provided_department)
@@ -425,6 +440,7 @@ def import_orders(db: Session, filename: str, content: bytes, batch_type: str, i
                         department_major=department,
                         aliquot_required=aliquot_flag or aliquot_by_rule,
                         transfer_required=transfer_flag or transfer_by_rule,
+                        specimen_name=specimen_override,
                     )
                 )
 
@@ -451,14 +467,16 @@ def import_orders(db: Session, filename: str, content: bytes, batch_type: str, i
     db.flush()
 
     # ── 미생물 소분류 예정 목록 재생성 (이번 배치 기준) ────────────────────
-    _rebuild_micro_culture_plans(db, batch.id, list(grouped.keys()))
+    _rebuild_micro_culture_plans(db, batch.id, list(grouped.keys()), workday_type=workday_type)
     # ────────────────────────────────────────────────────────────────────────
 
     db.commit()
     return {"batch_id": batch.id, "imported_orders": len(grouped), "is_final": is_final}
 
 
-def _rebuild_micro_culture_plans(db: Session, batch_id: int, accession_nos: list[str]) -> None:
+def _rebuild_micro_culture_plans(
+    db: Session, batch_id: int, accession_nos: list[str], workday_type: str = "weekday"
+) -> None:
     """
     업로드된 접수번호 기준으로 미생물 소분류 예정 목록(MicroCulturePlan) 재생성.
     - 이미 DONE 상태인 항목은 유지
@@ -491,11 +509,11 @@ def _rebuild_micro_culture_plans(db: Session, batch_id: int, accession_nos: list
         if not order:
             continue
         tests = tests_by_order.get(order.id, [])
-        test_names = [t.test_name for t in tests]
-        if not test_names:
+        if not tests:
             continue
-        culture_types = infer_culture_type_extended(
-            accno, test_names, order.specimen_name, order.hospital_name
+        test_pairs = [(t.test_name, t.specimen_name) for t in tests]
+        culture_types = classify_order_culture_types(
+            accno, test_pairs, order.specimen_name, order.hospital_name, workday_type=workday_type
         )
         for ct in culture_types:
             # 이미 DONE인 경우 제외

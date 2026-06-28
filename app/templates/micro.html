@@ -12,6 +12,17 @@
         <h1>학부별 소분류</h1>
       </div>
 
+      <!-- 평일/토요일 기준 선택 (외주·삼광 자동분류 기준) -->
+      <div class="d-flex align-items-center gap-2 mb-2" style="font-size:.78rem">
+        <button id="weekdayBtn" class="btn btn-sm btn-primary" onclick="setWorkdayType('weekday')"
+                style="padding:1px 8px;font-size:.75rem">평일 기준</button>
+        <button id="saturdayBtn" class="btn btn-sm btn-outline-secondary" onclick="setWorkdayType('saturday')"
+                style="padding:1px 8px;font-size:.75rem">토요일 기준</button>
+      </div>
+      <div class="text-secondary mb-3" style="font-size:.74rem">
+        현재 기준: <strong id="workdayLabel" class="text-primary">평일</strong>
+      </div>
+
       <!-- 학부 선택 버튼 -->
       <div id="deptList" class="d-flex flex-column gap-2 mb-3"></div>
 
@@ -472,6 +483,7 @@ let currentDisplayRackNo = 1;
 let lastHighlightPos    = null;
 let sessionScanNo       = 0;
 let rackSize            = parseInt(localStorage.getItem("rackSize") || "50");
+let workdayType         = localStorage.getItem("workdayType") || "weekday";
 
 // 비미생물 전용 상태
 let latestRows  = [];
@@ -626,7 +638,7 @@ function setNmState(busy) {
 }
 
 function looksLikeScanner(val, startedAt) {
-  return val.trim().length >= 6 && Date.now() - startedAt <= 700;
+  return val.trim().length >= 6 && Date.now() - startedAt <= 1500;
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -643,6 +655,7 @@ async function submitSubBarcode(input) {
     const res = await postJson("/api/micro/auto-culture-scan", {
       accession_no:     accNo,
       rack_size:        rackSize,
+      workday_type:     workdayType,
       client_name:      navigator.userAgent.slice(0, 100),
       operator_name:    subOp.value.trim(),
       workstation_name: subWs.value.trim(),
@@ -697,7 +710,7 @@ document.getElementById("subBarcode").addEventListener("input", e => {
   clearTimeout(subTimer);
   subTimer = setTimeout(() => {
     if (looksLikeScanner(input.value, subStartedAt)) submitSubBarcode(input);
-  }, 220);
+  }, 400);
 });
 document.getElementById("subBarcode").addEventListener("keydown", async e => {
   if (e.key !== "Enter") return;
@@ -754,7 +767,7 @@ document.getElementById("nmBarcode").addEventListener("input", e => {
   clearTimeout(nmTimer);
   nmTimer = setTimeout(() => {
     if (looksLikeScanner(input.value, nmStartedAt)) submitNmBarcode(input);
-  }, 220);
+  }, 400);
 });
 document.getElementById("nmBarcode").addEventListener("keydown", async e => {
   if (e.key !== "Enter") return;
@@ -1025,6 +1038,24 @@ function initRackSizeButtons() {
   const b100 = document.getElementById("rack100Btn");
   if (b50)  b50.className  = `btn btn-sm ${rackSize === 50  ? "btn-primary" : "btn-outline-secondary"}`;
   if (b100) b100.className = `btn btn-sm ${rackSize === 100 ? "btn-primary" : "btn-outline-secondary"}`;
+}
+
+// ───────────────────────────────────────────────────────────────
+// 평일 / 토요일 기준 선택 (외주·삼광 자동분류 기준)
+// ───────────────────────────────────────────────────────────────
+function setWorkdayType(type) {
+  workdayType = type;
+  localStorage.setItem("workdayType", type);
+  initWorkdayButtons();
+}
+
+function initWorkdayButtons() {
+  const bWeekday  = document.getElementById("weekdayBtn");
+  const bSaturday = document.getElementById("saturdayBtn");
+  const label     = document.getElementById("workdayLabel");
+  if (bWeekday)  bWeekday.className  = `btn btn-sm ${workdayType === "weekday"  ? "btn-primary" : "btn-outline-secondary"}`;
+  if (bSaturday) bSaturday.className = `btn btn-sm ${workdayType === "saturday" ? "btn-primary" : "btn-outline-secondary"}`;
+  if (label)     label.textContent   = workdayType === "saturday" ? "토요일" : "평일";
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -1470,6 +1501,7 @@ renderDeptList();
 renderSubcatList(activeDept, activeSubcat);
 updateLayoutVisibility();
 initRackSizeButtons();
+initWorkdayButtons();
 if (!isMicro()) updateNonMicroDisplay();
 loadData();
 setInterval(loadData, 8000);

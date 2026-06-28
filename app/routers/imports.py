@@ -27,11 +27,12 @@ async def import_order_file(
     file: UploadFile = File(...),
     batch_type: str = Form("1차"),
     is_final: bool = Form(False),
+    workday_type: str = Form("weekday"),
     db: Session = Depends(get_db),
 ):
     try:
         content = await file.read()
-        return import_orders(db, file.filename or "orders", content, batch_type, is_final)
+        return import_orders(db, file.filename or "orders", content, batch_type, is_final, workday_type=workday_type)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

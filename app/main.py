@@ -100,6 +100,7 @@ def ensure_schema_columns():
             "accession_date": "VARCHAR(20)",
         },
         "specimen_arrivals": {"workstation_name": "VARCHAR(120)"},
+        "order_tests": {"specimen_name": "VARCHAR(120)"},
         "scan_logs": {
             "operator_name": "VARCHAR(80)",
             "workstation_name": "VARCHAR(120)",

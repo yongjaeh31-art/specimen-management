@@ -54,6 +54,7 @@ def auto_culture_scan(request: AutoCultureScanRequest, db: Session = Depends(get
             request.operator_name,
             request.workstation_name,
             rack_size=request.rack_size,
+            workday_type=request.workday_type,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

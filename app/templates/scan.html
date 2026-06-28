@@ -97,7 +97,7 @@ function setScanState(state) {
 }
 
 function looksLikeScanner(input) {
-  return input.value.trim().length >= 6 && Date.now() - scanStartedAt <= 700;
+  return input.value.trim().length >= 6 && Date.now() - scanStartedAt <= 1500;
 }
 
 async function submitBarcode(input) {
@@ -141,7 +141,7 @@ document.getElementById("barcode").addEventListener("input", e => {
   if (len <= 1 || len < scanLastLength) scanStartedAt = Date.now();
   scanLastLength = len;
   clearTimeout(scanTimer);
-  scanTimer = setTimeout(() => { if (looksLikeScanner(input)) submitBarcode(input); }, 220);
+  scanTimer = setTimeout(() => { if (looksLikeScanner(input)) submitBarcode(input); }, 400);
 });
 
 document.getElementById("barcode").addEventListener("keydown", async e => {

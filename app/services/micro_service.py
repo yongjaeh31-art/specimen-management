@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import CultureRule, MicroCultureAssignment, MicroCulturePlan, Order, OrderTest, ScanLog, SpecimenArrival
-from app.services.culture_matcher import infer_culture_for_test, infer_culture_type_extended, infer_micro_culture_types, normalize_text
+from app.services.culture_matcher import classify_order_culture_types, infer_culture_for_test, infer_culture_type_extended, infer_micro_culture_types, normalize_text
 from app.services.scan_service import MICRO_DEPARTMENT, _order_payload, find_order_by_accession, has_arrived
 
 RACK_SIZE = 50  # 50칸 스폰지랙
@@ -371,10 +371,12 @@ def auto_assign_culture_hole(
     operator_name: str | None = None,
     workstation_name: str | None = None,
     rack_size: int = RACK_SIZE,
+    workday_type: str = "weekday",
 ) -> dict:
     """
     검체 스캔 → culture_type 자동 판정 → 스폰지랙 위치 배정.
     rack_size: 50 또는 100 (칸 수, 기본 50).
+    workday_type: "weekday" 또는 "saturday" — 외주/삼광 자동분류 기준.
     도착관리 선행 검증 없음 (수기 확인 기준 업무 방식).
     """
     accession_no = accession_no.strip()
@@ -400,9 +402,10 @@ def auto_assign_culture_hole(
             "test_names": test_names,
         }
 
-    # 2. culture_type 자동 판정 (외주·삼광 규칙 포함)
-    culture_types = infer_culture_type_extended(
-        accession_no, test_names, specimen_name, order.hospital_name
+    # 2. culture_type 자동 판정 (외주·삼광 규칙 포함, 평일/토요일 기준, 검사별 검체 override 인식)
+    test_pairs = [(t.test_name, t.specimen_name) for t in order.tests]
+    culture_types = classify_order_culture_types(
+        accession_no, test_pairs, specimen_name, order.hospital_name, workday_type=workday_type
     )
 
     if not culture_types:

@@ -69,6 +69,10 @@ class OrderTest(Base):
     department_major: Mapped[str] = mapped_column(String(40), nullable=False, default="기타/확인필요")
     aliquot_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     transfer_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    specimen_name: Mapped[str | None] = mapped_column(String(120))
+    """업로드 파일에서 이 검사가 속한 행의 검체명. 한 접수번호에 검체가 2종류 이상
+    (예: 일반 소변배양 + CRE 직장도자) 들어온 경우를 위한 검사별 override.
+    None이면 Order.specimen_name(접수 단위 검체명)을 그대로 사용한다."""
 
     order: Mapped[Order] = relationship(back_populates="tests")
 

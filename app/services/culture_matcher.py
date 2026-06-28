@@ -59,8 +59,9 @@ def infer_culture_for_test(test_name: str, specimen_name: str | None = None) -> 
     return None
 
 
-def infer_micro_culture_types(test_names: list[str], specimen_name: str | None = None) -> list[str]:
-    """검사명 목록 + 검체명으로 가능한 배양 타입 목록 반환 (중복 제거)"""
+def _legacy_infer_micro_culture_types(test_names: list[str], specimen_name: str | None = None) -> list[str]:
+    """기존(외주/삼광 도입 이전) 미생물 소분류 매핑 — 절대 변경하지 않는다.
+    accession_no 없이 호출되는 모든 기존 호출부의 동작은 이 함수 그대로 유지된다."""
     found: list[str] = []
     seen: set[str] = set()
     for name in test_names:
@@ -88,6 +89,37 @@ def infer_micro_culture_types(test_names: list[str], specimen_name: str | None =
     return found
 
 
+def infer_micro_culture_types(
+    test_names: list[str],
+    specimen_name: str | None = None,
+    accession_no: str | None = None,
+    hospital_name: str | None = None,
+    workday_type: str = "weekday",
+) -> list[str]:
+    """검사명 목록 + 검체명으로 가능한 배양 타입 목록 반환.
+
+    하위 호환: accession_no를 넘기지 않는 기존 호출부는 동작이 전혀 바뀌지 않는다
+    (기존 infer_micro_culture_types 매핑만 수행).
+
+    accession_no(+ hospital_name)를 넘기면 외주/삼광 확장 규칙(평일/토요일 기준,
+    workday_type="weekday"|"saturday")을 우선 적용하고, 해당하지 않으면 기존
+    매핑으로 폴스루한다.
+    """
+    if not accession_no:
+        return _legacy_infer_micro_culture_types(test_names, specimen_name)
+
+    # 평일/토요일 공통 최우선 규칙: Ordinary culture & Sensitivity (disk) → 삼광
+    if _has_ordinary_disk(test_names):
+        return ["삼광"]
+
+    classify = _classify_saturday if workday_type == "saturday" else _classify_weekday
+    result = classify(accession_no, test_names, specimen_name, hospital_name)
+    if result is not None:
+        return result
+
+    return _legacy_infer_micro_culture_types(test_names, specimen_name)
+
+
 def is_matching_micro_culture(test_names: list[str], specimen_name: str | None, selected_culture_type: str) -> bool:
     inferred = infer_micro_culture_types(test_names, specimen_name)
     if selected_culture_type in inferred:
@@ -102,13 +134,18 @@ def is_matching_micro_culture(test_names: list[str], specimen_name: str | None, 
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 외주 / 삼광 확장 분류 규칙
+# 외주 / 삼광 확장 분류 규칙 (평일 / 토요일 기준)
 # ──────────────────────────────────────────────────────────────────────────────
 
+WEEKDAY = "weekday"
+SATURDAY = "saturday"
+
+# 외주 후보 분류코드: 11·12·43·45·76
 OUTSOURCE_CODES = {"11", "12", "43", "45"}
 OUTSOURCE_CODE_76 = "76"
+OUTSOURCE_CODES_ALL = OUTSOURCE_CODES | {OUTSOURCE_CODE_76}
 
-OUTSOURCE_EXCLUDED_HOSPITALS = {
+OUTSOURCE_EXCLUDED_HOSPITALS_RAW = {
     "아인병원",
     "금천수병원",
     "삼성장편한내과",
@@ -117,11 +154,17 @@ OUTSOURCE_EXCLUDED_HOSPITALS = {
     "원주센텀병원",
     "예손병원",
 }
+OUTSOURCE_EXCLUDED_HOSPITALS = {normalize_text(h) for h in OUTSOURCE_EXCLUDED_HOSPITALS_RAW}
 
 SAMKWANG_HOSPITAL = "연세지안비뇨의학과"
+_SAMKWANG_HOSPITAL_NORM = normalize_text(SAMKWANG_HOSPITAL)
 
 OUTSOURCE_CODE_14 = "14"
 YESON_HOSPITAL = "예손병원"
+_YESON_HOSPITAL_VARIANTS = {normalize_text("예손병원"), normalize_text("에손병원")}
+
+SUWON_DUKSAN_CODE = "15"
+_SUWON_DUKSAN_HOSPITAL_NORM = normalize_text("수원덕산병원")
 
 
 def get_classification_code(accession_no: str) -> str:
@@ -141,49 +184,179 @@ def _has_ordinary_disk(test_names: list[str]) -> bool:
     return False
 
 
+def _any_test_is(test_names: list[str], specimen_name: str | None, target_type: str) -> bool:
+    """검사명 목록 중 하나라도 기존 단일 매핑 결과가 target_type과 일치하는지 확인."""
+    return any(infer_culture_for_test(name, specimen_name) == target_type for name in test_names)
+
+
+def _is_health_cert_test(name: str) -> bool:
+    """보건증 Salmonella & Shigella culture (아인 포함 여부 무관)"""
+    n = normalize_text(name)
+    return "보건증" in n or ("salmonella" in n and "shigella" in n)
+
+
+def _is_health_cert_ain_variant(name: str) -> bool:
+    """보건증 Salmonella & Shigella culture(아인) 전용 변형 여부"""
+    n = normalize_text(name)
+    return _is_health_cert_test(name) and "아인" in n
+
+
+def _norm_hospital(hospital_name: str | None) -> str:
+    return normalize_text(hospital_name)
+
+
+def _classify_weekday(
+    accession_no: str,
+    test_names: list[str],
+    specimen_name: str | None,
+    hospital_name: str | None,
+) -> list[str] | None:
+    """평일 기준 외주/삼광 분류. None 반환 시 기존 미생물 매핑 적용."""
+    code = get_classification_code(accession_no)
+    hosp = _norm_hospital(hospital_name)
+    sp = normalize_text(specimen_name)
+
+    # 2·3. 분류코드 76 + 연세지안비뇨의학과
+    if code == OUTSOURCE_CODE_76 and hosp == _SAMKWANG_HOSPITAL_NORM:
+        return ["삼광"] if "urine" in sp else None
+
+    # 4. GBS / Mycoplasma 예외 → 외주 아님, 기존 매핑
+    if (
+        _any_test_is(test_names, specimen_name, "산전 GBS 배양검사")
+        or _any_test_is(test_names, specimen_name, "Mycoplasma & Ureaplasma Culture")
+    ):
+        return None
+
+    # 5. 보건증 (아인 포함/미포함 모두) → 외주 아님, 기존 매핑(결과: 보건증)
+    if any(_is_health_cert_test(name) for name in test_names):
+        return None
+
+    # 6. 분류코드 14 + 예손병원(오타 포함) → 외주 (외주 제외 병원 규칙보다 우선)
+    if code == OUTSOURCE_CODE_14 and hosp in _YESON_HOSPITAL_VARIANTS:
+        return ["외주"]
+
+    # 7. 외주 제외 병원 → 기존 매핑
+    if hosp in OUTSOURCE_EXCLUDED_HOSPITALS:
+        return None
+
+    # 8. 분류코드 11·12·43·45·76 → 외주
+    if code in OUTSOURCE_CODES_ALL:
+        return ["외주"]
+
+    # 9. 그 외 → 기존 매핑
+    return None
+
+
+def _classify_saturday(
+    accession_no: str,
+    test_names: list[str],
+    specimen_name: str | None,
+    hospital_name: str | None,
+) -> list[str] | None:
+    """토요일 기준 외주/삼광 분류. None 반환 시 기존 미생물 매핑 적용."""
+    code = get_classification_code(accession_no)
+    hosp = _norm_hospital(hospital_name)
+    sp = normalize_text(specimen_name)
+
+    # 2·3. 분류코드 76 + 연세지안비뇨의학과
+    if code == OUTSOURCE_CODE_76 and hosp == _SAMKWANG_HOSPITAL_NORM:
+        return ["삼광"] if "urine" in sp else None
+
+    # 4. GBS / Mycoplasma 예외 → 외주 아님, 기존 매핑
+    if (
+        _any_test_is(test_names, specimen_name, "산전 GBS 배양검사")
+        or _any_test_is(test_names, specimen_name, "Mycoplasma & Ureaplasma Culture")
+    ):
+        return None
+
+    has_ain_cert = any(_is_health_cert_ain_variant(name) for name in test_names)
+    has_plain_cert = any(
+        _is_health_cert_test(name) and not _is_health_cert_ain_variant(name)
+        for name in test_names
+    )
+
+    # 5. 보건증(아인) → 외주 아님, 기존 매핑(결과: 보건증)
+    if has_ain_cert:
+        return None
+
+    # 6. 외주 제외 병원이라도 CRE/VRE culture 포함 시 → 외주
+    if hosp in OUTSOURCE_EXCLUDED_HOSPITALS:
+        if (
+            _any_test_is(test_names, specimen_name, "CRE culture")
+            or _any_test_is(test_names, specimen_name, "VRE culture")
+        ):
+            return ["외주"]
+
+    # 7. 분류코드 11·12·43·45·76 + 보건증(비-아인) 포함 → 외주
+    if code in OUTSOURCE_CODES_ALL and has_plain_cert:
+        return ["외주"]
+
+    # 8. 분류코드 15 + 수원덕산병원 → 외주 아님, 기존 매핑
+    if code == SUWON_DUKSAN_CODE and hosp == _SUWON_DUKSAN_HOSPITAL_NORM:
+        return None
+
+    # 9. 분류코드 14 + 예손병원(오타 포함) → 외주
+    if code == OUTSOURCE_CODE_14 and hosp in _YESON_HOSPITAL_VARIANTS:
+        return ["외주"]
+
+    # 10. 외주 제외 병원 → 기존 매핑
+    if hosp in OUTSOURCE_EXCLUDED_HOSPITALS:
+        return None
+
+    # 11. 분류코드 11·12·43·45·76 → 외주
+    if code in OUTSOURCE_CODES_ALL:
+        return ["외주"]
+
+    # 12. 그 외 → 기존 매핑
+    return None
+
+
 def infer_culture_type_extended(
     accession_no: str,
     test_names: list[str],
     specimen_name: str | None,
     hospital_name: str | None,
+    workday_type: str = WEEKDAY,
 ) -> list[str]:
+    """기존 infer_micro_culture_types에 외주·삼광 규칙을 추가한 확장 분류 함수.
+    하위 호환 wrapper — infer_micro_culture_types(accession_no=...)로 위임."""
+    return infer_micro_culture_types(
+        test_names,
+        specimen_name,
+        accession_no=accession_no,
+        hospital_name=hospital_name,
+        workday_type=workday_type,
+    )
+
+
+def classify_order_culture_types(
+    accession_no: str,
+    tests: list[tuple[str, str | None]],
+    order_specimen_name: str | None,
+    hospital_name: str | None,
+    workday_type: str = WEEKDAY,
+) -> list[str]:
+    """접수번호 단위 확장 분류 — 검사별로 검체명이 다를 수 있는 경우(예: 같은
+    접수번호에 일반 소변배양 + CRE 직장도자 검체가 함께 온 경우) 대응.
+
+    tests: (검사명, 검사별_검체명 또는 None) 목록. 검사별 검체명이 None이면
+    order_specimen_name(접수 단위 검체명)을 사용한다.
+
+    검체별로 그룹을 나눠 각각 infer_culture_type_extended를 적용하고 결과를
+    합친다 — 모든 검사가 같은 검체(또는 전부 None)면 기존과 동일하게 동작한다.
     """
-    기존 infer_micro_culture_types에 외주·삼광 규칙을 추가한 확장 분류 함수.
+    groups: dict[str | None, list[str]] = {}
+    for test_name, per_test_specimen in tests:
+        key = per_test_specimen or order_specimen_name
+        groups.setdefault(key, []).append(test_name)
 
-    우선순위:
-      1. 검사명에 Ordinary culture & Sensitivity (disk) 포함 → 삼광
-      2. 분류코드 14 + 예손병원 → 외주 (외주 제외 병원 규칙보다 우선)
-      3. 분류코드 76:
-         a. 연세지안비뇨의학과 + Urine → 삼광
-         b. 연세지안비뇨의학과 + Urine 아님 → 기존 매핑 (외주 제외)
-         c. 그 외 병원 → 외주
-      4. 외주 제외 병원 여부 확인
-      5. 분류코드 11·12·43·45 → 외주
-      6. 기존 infer_micro_culture_types 매핑
-    """
-    # 1. Ordinary disk culture → 삼광
-    if _has_ordinary_disk(test_names):
-        return ["삼광"]
-
-    code = get_classification_code(accession_no)
-    hosp = (hospital_name or "").strip()
-    sp = normalize_text(specimen_name)
-
-    # 2. 분류코드 14 + 예손병원 → 외주 (외주 제외 병원 규칙보다 우선 적용)
-    if code == OUTSOURCE_CODE_14 and hosp == YESON_HOSPITAL:
-        return ["외주"]
-
-    # 3. 분류코드 76 전용 규칙
-    if code == OUTSOURCE_CODE_76:
-        if hosp == SAMKWANG_HOSPITAL:
-            if "urine" in sp:
-                return ["삼광"]
-            return infer_micro_culture_types(test_names, specimen_name)
-        return ["외주"]
-
-    # 4·5. 외주 분류코드 체크 (제외 병원은 기존 매핑으로 pass-through)
-    if code in OUTSOURCE_CODES and hosp not in OUTSOURCE_EXCLUDED_HOSPITALS:
-        return ["외주"]
-
-    # 6. 기존 매핑
-    return infer_micro_culture_types(test_names, specimen_name)
+    result: list[str] = []
+    seen: set[str] = set()
+    for specimen, names in groups.items():
+        for ct in infer_culture_type_extended(
+            accession_no, names, specimen, hospital_name, workday_type=workday_type
+        ):
+            if ct not in seen:
+                seen.add(ct)
+                result.append(ct)
+    return result

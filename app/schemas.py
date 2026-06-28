@@ -80,7 +80,8 @@ class SubdivisionScanRequest(BaseModel):
 class AutoCultureScanRequest(BaseModel):
     """미생물 자동 소분류 스캔 — culture_type 선택 없이 자동 판정"""
     accession_no: str
-    rack_size: int = 50          # 50 또는 100 (칸 수)
+    rack_size: int = 50              # 50 또는 100 (칸 수)
+    workday_type: str = "weekday"    # "weekday" 또는 "saturday" — 외주/삼광 자동분류 기준
     client_name: str | None = None
     operator_name: str | None = None
     workstation_name: str | None = None

@@ -46,7 +46,7 @@ let findTimer = null, findStartedAt = 0, findLastLength = 0;
 const findHistoryLog = [];
 
 function looksLikeFindScanner(input) {
-  return input.value.trim().length >= 6 && Date.now() - findStartedAt <= 700;
+  return input.value.trim().length >= 6 && Date.now() - findStartedAt <= 1500;
 }
 
 async function findSpecimen(input) {
@@ -202,7 +202,7 @@ document.getElementById("findBarcode").addEventListener("input", e => {
   if (len <= 1 || len < findLastLength) findStartedAt = Date.now();
   findLastLength = len;
   clearTimeout(findTimer);
-  findTimer = setTimeout(() => { if (looksLikeFindScanner(input)) findSpecimen(input); }, 220);
+  findTimer = setTimeout(() => { if (looksLikeFindScanner(input)) findSpecimen(input); }, 400);
 });
 document.getElementById("findBarcode").addEventListener("keydown", async e => {
   if (e.key !== "Enter") return;

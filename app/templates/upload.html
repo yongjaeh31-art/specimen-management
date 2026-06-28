@@ -148,6 +148,8 @@ document.getElementById("uploadForm").addEventListener("submit", async e => {
 
   const data = new FormData(form);
   data.set("is_final", form.is_final.checked ? "true" : "false");
+  // 미생물 소분류 화면에서 선택한 평일/토요일 기준을 그대로 반영 (외주·삼광 자동분류용)
+  data.set("workday_type", localStorage.getItem("workdayType") || "weekday");
 
   const btn = document.getElementById("submitBtn");
   btn.disabled = true;
