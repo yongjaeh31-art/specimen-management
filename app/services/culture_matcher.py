@@ -279,13 +279,21 @@ def _classify_saturday(
     if has_ain_cert:
         return None
 
-    # 6. 외주 제외 병원이라도 CRE/VRE culture 포함 시 → 외주
-    if hosp in OUTSOURCE_EXCLUDED_HOSPITALS:
-        if (
-            _any_test_is(test_names, specimen_name, "CRE culture")
-            or _any_test_is(test_names, specimen_name, "VRE culture")
-        ):
-            return ["외주"]
+    # 6. CRE/VRE culture → 기본 외주. 단, 외주 제외 병원이거나
+    #    (분류코드 15 + 수원덕산병원)이면 외주로 보내지 않고 기존 매핑 유지
+    has_cre = _any_test_is(test_names, specimen_name, "CRE culture")
+    has_vre = _any_test_is(test_names, specimen_name, "VRE culture")
+    if has_cre or has_vre:
+        is_excluded_hosp = hosp in OUTSOURCE_EXCLUDED_HOSPITALS
+        is_suwon_duksan_exempt = code == SUWON_DUKSAN_CODE and hosp == _SUWON_DUKSAN_HOSPITAL_NORM
+        if is_excluded_hosp or is_suwon_duksan_exempt:
+            kept: list[str] = []
+            if has_cre:
+                kept.append("CRE culture")
+            if has_vre:
+                kept.append("VRE culture")
+            return kept
+        return ["외주"]
 
     # 7. 분류코드 11·12·43·45·76 + 보건증(비-아인) 포함 → 외주
     if code in OUTSOURCE_CODES_ALL and has_plain_cert:

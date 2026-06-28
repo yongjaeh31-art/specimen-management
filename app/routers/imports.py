@@ -11,8 +11,6 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas import AdminPasswordRequest
-from app.services.auth_service import check_admin_password
 from app.services.import_service import import_orders, reset_all_data
 
 router = APIRouter(prefix="/api/import", tags=["imports"])
@@ -38,10 +36,8 @@ async def import_order_file(
 
 
 @router.post("/reset-all")
-def reset_all(request: AdminPasswordRequest, db: Session = Depends(get_db)):
-    """업로드 파일 및 접수리스트 전체 초기화 (관리자 비밀번호 필요)"""
-    if not check_admin_password(request.admin_password):
-        raise HTTPException(status_code=403, detail="관리자 비밀번호가 일치하지 않습니다.")
+def reset_all(db: Session = Depends(get_db)):
+    """업로드 파일 및 접수리스트 전체 초기화"""
     return reset_all_data(db)
 
 

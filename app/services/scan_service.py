@@ -2,6 +2,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Order, ScanLog, SpecimenArrival
+from app.services.barcode_service import normalize_accession_input
 from app.services.routing_service import build_department_cards
 
 
@@ -22,6 +23,7 @@ def has_arrived(db: Session, accession_no: str) -> bool:
 
 
 def find_order_by_accession(db: Session, accession_no: str) -> Order | None:
+    accession_no = normalize_accession_input(accession_no)
     query = db.query(Order).options(joinedload(Order.tests))
     order = query.filter(Order.accession_no == accession_no).first()
     if order:
@@ -87,7 +89,7 @@ def scan_specimen(
     operator_name: str | None = None,
     workstation_name: str | None = None,
 ) -> dict:
-    accession_no = accession_no.strip()
+    accession_no = normalize_accession_input(accession_no)
     category = (specimen_category or "").strip()
     order = find_order_by_accession(db, accession_no)
 

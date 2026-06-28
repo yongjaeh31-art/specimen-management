@@ -192,6 +192,16 @@ class RegisteredPC(Base):
     registered_by: Mapped[str | None] = mapped_column(String(80))
 
 
+class AppSetting(Base):
+    """여러 PC에서 공유해야 하는 전역 설정 (예: 평일/토요일 분류 기준).
+    localStorage는 PC별로 분리되어 있어, 업로드를 처리하는 PC와 미생물 화면에서
+    토글을 누른 PC가 다르면 값이 어긋난다 — 서버 DB에 저장해 모든 PC가 같은 값을 본다."""
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
 class DepartmentSubcategoryAssignment(Base):
     __tablename__ = "department_subcategory_assignments"
     __table_args__ = (

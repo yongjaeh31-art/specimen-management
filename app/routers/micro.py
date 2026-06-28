@@ -14,7 +14,7 @@ from app.database import get_db
 from app.models import DepartmentSubcategoryAssignment, MicroCultureAssignment, MicroCulturePlan
 from app.schemas import (
     AutoCultureScanRequest, CultureScanRequest,
-    DEPARTMENT_SUBCATEGORIES, MICRO_CULTURE_TYPES, SubdivisionScanRequest,
+    DEPARTMENT_SUBCATEGORIES, MICRO_CULTURE_TYPES, SubdivisionScanRequest, WorkdayTypeRequest,
 )
 from app.services.micro_service import (
     _assignment_dict, _shift_start, _today_start,
@@ -22,10 +22,24 @@ from app.services.micro_service import (
     auto_assign_culture_hole,
     get_culture_plan_list,
     get_today_micro_assignments,
+    get_workday_type_setting,
+    set_workday_type_setting,
 )
 from app.services.subdivision_service import assign_department_subcategory, combined_assignments
 
 router = APIRouter(prefix="/api/micro", tags=["micro"])
+
+
+@router.get("/workday-type")
+def workday_type_get(db: Session = Depends(get_db)):
+    """모든 PC가 공유하는 평일/토요일 분류 기준 조회"""
+    return {"workday_type": get_workday_type_setting(db)}
+
+
+@router.post("/workday-type")
+def workday_type_set(request: WorkdayTypeRequest, db: Session = Depends(get_db)):
+    """평일/토요일 분류 기준 변경 — 서버에 저장되어 모든 PC(업로드 PC 포함)에 즉시 반영"""
+    return {"workday_type": set_workday_type_setting(db, request.workday_type)}
 
 
 @router.post("/culture-scan")

@@ -181,25 +181,50 @@ check(
 
 
 # ──────────────────────────────────────────────────────────────────
-# 8. 외주 제외 병원 + 토요일 CRE/VRE 예외
+# 8. 토요일 CRE/VRE 분류 (기본 외주, 예외 시 기존매핑)
 # ──────────────────────────────────────────────────────────────────
 check(
-    "토요일: 아인병원+CRE -> 외주",
+    "토요일: 일반병원+CRE -> 외주 (기본 규칙)",
+    infer_culture_type_extended("9999999", ["CRE culture & Sensitivity (MIC)"], None, "일반병원", workday_type="saturday"),
+    ["외주"],
+)
+check(
+    "토요일: 일반병원+VRE -> 외주 (기본 규칙)",
+    infer_culture_type_extended("9999999", ["VRE culture & Sensitivity (MIC)"], None, "일반병원", workday_type="saturday"),
+    ["외주"],
+)
+check(
+    "토요일: 아인병원(외주제외)+CRE -> CRE culture (예외1)",
     infer_culture_type_extended("9999999", ["CRE culture & Sensitivity (MIC)"], None, "아인병원", workday_type="saturday"),
-    ["외주"],
-)
-check(
-    "토요일: 금천수병원+VRE -> 외주",
-    infer_culture_type_extended("9999999", ["VRE culture & Sensitivity (MIC)"], None, "금천수병원", workday_type="saturday"),
-    ["외주"],
-)
-check(
-    "평일: 아인병원+CRE -> 기존매핑(외주 아님, 토요일과 차이)",
-    infer_culture_type_extended("9999999", ["CRE culture & Sensitivity (MIC)"], None, "아인병원", workday_type="weekday"),
     ["CRE culture"],
 )
 check(
-    "토요일: 아인병원+Urine(CRE/VRE 아님) -> 기존매핑(외주 아님)",
+    "토요일: 금천수병원(외주제외)+VRE -> VRE culture (예외1)",
+    infer_culture_type_extended("9999999", ["VRE culture & Sensitivity (MIC)"], None, "금천수병원", workday_type="saturday"),
+    ["VRE culture"],
+)
+check(
+    "토요일: 분류코드15+수원덕산병원+CRE -> CRE culture (예외2)",
+    infer_culture_type_extended("1500981", ["CRE culture & Sensitivity (MIC)"], None, "수원덕산병원", workday_type="saturday"),
+    ["CRE culture"],
+)
+check(
+    "토요일: 분류코드15+수원덕산병원+VRE -> VRE culture (예외2)",
+    infer_culture_type_extended("1500981", ["VRE culture & Sensitivity (MIC)"], None, "수원덕산병원", workday_type="saturday"),
+    ["VRE culture"],
+)
+check(
+    "평일: 일반병원+CRE -> 기존매핑(외주 아님, 토요일과 차이)",
+    infer_culture_type_extended("9999999", ["CRE culture & Sensitivity (MIC)"], None, "일반병원", workday_type="weekday"),
+    ["CRE culture"],
+)
+check(
+    "평일: 일반병원+VRE -> 기존매핑(외주 아님, 토요일과 차이)",
+    infer_culture_type_extended("9999999", ["VRE culture & Sensitivity (MIC)"], None, "일반병원", workday_type="weekday"),
+    ["VRE culture"],
+)
+check(
+    "토요일: 아인병원+Urine(CRE/VRE 아님) -> 기존매핑(외주 아님, 영향 없음)",
     infer_culture_type_extended("1101050", ["Ordinary culture & Sensitivity (MIC)"], "Urine", "아인병원", workday_type="saturday"),
     ["Urine culture"],
 )

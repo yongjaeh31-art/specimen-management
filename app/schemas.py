@@ -122,6 +122,10 @@ class AdminPasswordRequest(BaseModel):
     admin_password: str
 
 
+class WorkdayTypeRequest(BaseModel):
+    workday_type: str
+
+
 class PCRegisterRequest(BaseModel):
     pc_name: str
     registered_by: str | None = None

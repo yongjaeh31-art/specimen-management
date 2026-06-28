@@ -31,6 +31,12 @@
           </div>
         </div>
 
+        <div class="alert alert-secondary d-flex align-items-center gap-2 mb-3" style="font-size:.85rem">
+          <i class="bi bi-calendar-check"></i>
+          외주·삼광 분류 기준: <strong id="uploadWorkdayLabel">확인 중…</strong>
+          <span class="text-secondary">(미생물 화면의 평일/토요일 토글과 동일하게 적용됩니다)</span>
+        </div>
+
         <!-- 드래그앤드롭 업로드 영역 -->
         <div class="upload-dropzone mb-3" id="dropzone">
           <i class="bi bi-file-earmark-spreadsheet"></i>
@@ -140,16 +146,35 @@ function setFile(file) {
   dropzone.classList.add("d-none");
 }
 
+// 평일/토요일 분류 기준 — 미생물 화면에서 토글한 값이 서버에 저장되어 있으므로
+// 업로드 PC가 다르더라도(localStorage는 PC별로 분리됨) 항상 서버 값을 그대로 사용한다.
+let uploadWorkdayType = "weekday";
+
+async function syncUploadWorkdayLabel() {
+  const labelEl = document.getElementById("uploadWorkdayLabel");
+  try {
+    const res  = await fetch("/api/micro/workday-type");
+    const data = await res.json();
+    uploadWorkdayType = data.workday_type === "saturday" ? "saturday" : "weekday";
+  } catch (e) {
+    uploadWorkdayType = "weekday";
+  }
+  if (labelEl) labelEl.textContent = uploadWorkdayType === "saturday" ? "토요일" : "평일";
+}
+syncUploadWorkdayLabel();
+
 document.getElementById("uploadForm").addEventListener("submit", async e => {
   e.preventDefault();
   const form    = e.target;
   const fileObj = fileInput.files[0];
   if (!fileObj) { showToast("파일 없음", "업로드할 파일을 선택하세요.", "warning"); return; }
 
+  // 제출 직전 서버 값을 다시 한번 확인 (업로드 도중 다른 PC가 기준을 바꿨을 가능성 대비)
+  await syncUploadWorkdayLabel();
+
   const data = new FormData(form);
   data.set("is_final", form.is_final.checked ? "true" : "false");
-  // 미생물 소분류 화면에서 선택한 평일/토요일 기준을 그대로 반영 (외주·삼광 자동분류용)
-  data.set("workday_type", localStorage.getItem("workdayType") || "weekday");
+  data.set("workday_type", uploadWorkdayType);
 
   const btn = document.getElementById("submitBtn");
   btn.disabled = true;
@@ -165,7 +190,8 @@ document.getElementById("uploadForm").addEventListener("submit", async e => {
       return j;
     })();
 
-    const msg = `${fileObj.name} — ${json.imported_orders}건 (배치 ID ${json.batch_id})${json.is_final ? " [최종]" : ""}`;
+    const workdayLabel = uploadWorkdayType === "saturday" ? "토요일" : "평일";
+    const msg = `${fileObj.name} — ${json.imported_orders}건 (배치 ID ${json.batch_id})${json.is_final ? " [최종]" : ""} · ${workdayLabel} 기준 분류`;
     document.getElementById("uploadResult").innerHTML =
       `<div class="alert alert-success mb-0"><i class="bi bi-check-circle me-2"></i>${escapeHtml(msg)}</div>`;
     showToast("업로드 완료", msg, "success");
@@ -191,19 +217,12 @@ document.getElementById("resetAllBtn").addEventListener("click", async () => {
   );
   if (!ok) return;
 
-  const password = prompt("관리자 비밀번호를 입력하세요.");
-  if (password === null) return;
-
   const btn = document.getElementById("resetAllBtn");
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>초기화 중…';
 
   try {
-    const res = await fetch("/api/import/reset-all", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ admin_password: password }),
-    });
+    const res = await fetch("/api/import/reset-all", { method: "POST" });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "초기화 실패");
 

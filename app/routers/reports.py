@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import ImportBatch, MicroCultureAssignment, Order, SpecimenArrival
+from app.services.barcode_service import normalize_accession_input
 from app.services.routing_service import build_department_cards
 from app.services.scan_service import find_order_by_accession
 
@@ -80,7 +81,7 @@ def summary(db: Session = Depends(get_db)):
 
 @router.get("/specimen/find/{accession_no}")
 def specimen_find(accession_no: str, db: Session = Depends(get_db)):
-    accession_no = accession_no.strip()
+    accession_no = normalize_accession_input(accession_no)
     order = find_order_by_accession(db, accession_no)
     lookup_accession = order.accession_no if order else accession_no
     arrivals = (

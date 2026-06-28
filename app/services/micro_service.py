@@ -2,11 +2,30 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import CultureRule, MicroCultureAssignment, MicroCulturePlan, Order, OrderTest, ScanLog, SpecimenArrival
+from app.models import AppSetting, CultureRule, MicroCultureAssignment, MicroCulturePlan, Order, OrderTest, ScanLog, SpecimenArrival
+from app.services.barcode_service import normalize_accession_input
 from app.services.culture_matcher import classify_order_culture_types, infer_culture_for_test, infer_culture_type_extended, infer_micro_culture_types, normalize_text
 from app.services.scan_service import MICRO_DEPARTMENT, _order_payload, find_order_by_accession, has_arrived
 
 RACK_SIZE = 50  # 50칸 스폰지랙
+WORKDAY_TYPE_SETTING_KEY = "workday_type"
+
+
+def get_workday_type_setting(db: Session) -> str:
+    """모든 PC가 공유하는 평일/토요일 분류 기준 (기본값: weekday)."""
+    row = db.query(AppSetting).filter(AppSetting.key == WORKDAY_TYPE_SETTING_KEY).first()
+    return row.value if row else "weekday"
+
+
+def set_workday_type_setting(db: Session, value: str) -> str:
+    value = "saturday" if value == "saturday" else "weekday"
+    row = db.query(AppSetting).filter(AppSetting.key == WORKDAY_TYPE_SETTING_KEY).first()
+    if row:
+        row.value = value
+    else:
+        db.add(AppSetting(key=WORKDAY_TYPE_SETTING_KEY, value=value))
+    db.commit()
+    return value
 
 
 def _today_start() -> datetime:
@@ -117,7 +136,7 @@ def assign_culture_hole(
     operator_name: str | None = None,
     workstation_name: str | None = None,
 ) -> dict:
-    accession_no = accession_no.strip()
+    accession_no = normalize_accession_input(accession_no)
 
     # 1. 도착관리 선행 검증
     if not has_arrived(db, accession_no):
@@ -379,7 +398,7 @@ def auto_assign_culture_hole(
     workday_type: "weekday" 또는 "saturday" — 외주/삼광 자동분류 기준.
     도착관리 선행 검증 없음 (수기 확인 기준 업무 방식).
     """
-    accession_no = accession_no.strip()
+    accession_no = normalize_accession_input(accession_no)
 
     # 1. 주문 조회
     order = find_order_by_accession(db, accession_no)

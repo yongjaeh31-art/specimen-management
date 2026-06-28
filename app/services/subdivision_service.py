@@ -2,6 +2,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import DepartmentSubcategoryAssignment, DepartmentSubcategoryRule, MicroCultureAssignment, Order, OrderTest, ScanLog
+from app.services.barcode_service import normalize_accession_input
 from app.services.culture_matcher import infer_micro_culture_types, is_matching_micro_culture, normalize_text
 from app.services.scan_service import has_arrived
 
@@ -81,7 +82,7 @@ def assign_department_subcategory(
     operator_name: str | None = None,
     workstation_name: str | None = None,
 ) -> dict:
-    accession_no = accession_no.strip()
+    accession_no = normalize_accession_input(accession_no)
     department_name = department_name.strip()
     subcategory = subcategory.strip()
 
