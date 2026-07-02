@@ -58,7 +58,7 @@ if (Test-Path $pyExe) {
     & $pyExe (Join-Path $root "make_docs.py") 2>$null
     $docSrc = Join-Path $dist "문서"
     if (Test-Path $docSrc) {
-        Get-ChildItem $docSrc -Filter "*.pdf" | ForEach-Object {
+        Get-ChildItem $docSrc -File | Where-Object { $_.Extension -in ".pdf",".docx" } | ForEach-Object {
             Copy-Item $_.FullName $docsDir
             Write-Host "      + 문서\$($_.Name)"
         }

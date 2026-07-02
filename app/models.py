@@ -202,6 +202,42 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
+class BranchRackSession(Base):
+    """지사별 검체 확인 — PC별 분류코드 선택 세션"""
+    __tablename__ = "branch_rack_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workstation_name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    branch_codes_json: Mapped[str] = mapped_column(Text, nullable=False)   # JSON array of 2-char codes
+    rack_size: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    total_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    items: Mapped[list["BranchRackItem"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+
+
+class BranchRackItem(Base):
+    """지사별 검체 확인 — 세션 내 개별 검체 항목"""
+    __tablename__ = "branch_rack_items"
+    __table_args__ = (UniqueConstraint("session_id", "accession_no", name="uq_branch_rack_item"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("branch_rack_sessions.id", ondelete="CASCADE"), index=True)
+    accession_no: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    branch_code: Mapped[str] = mapped_column(String(10), nullable=False)
+    sort_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    rack_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    rack_position: Mapped[int] = mapped_column(Integer, nullable=False)
+    scanned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    operator_name: Mapped[str | None] = mapped_column(String(80))
+    workstation_name: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    session: Mapped["BranchRackSession"] = relationship(back_populates="items")
+
+
 class DepartmentSubcategoryAssignment(Base):
     __tablename__ = "department_subcategory_assignments"
     __table_args__ = (

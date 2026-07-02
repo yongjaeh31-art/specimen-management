@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from collections import defaultdict
 
 from app.models import (
+    BranchRackItem,
+    BranchRackSession,
     DepartmentRoute,
     DepartmentSubcategoryAssignment,
     ImportBatch,
@@ -548,6 +550,8 @@ def reset_all_data(db: Session) -> dict:
         "department_subcategory_assignments": db.query(DepartmentSubcategoryAssignment).delete(synchronize_session=False),
         "department_routes": db.query(DepartmentRoute).delete(synchronize_session=False),
         "specimen_arrivals": db.query(SpecimenArrival).delete(synchronize_session=False),
+        "branch_rack_items": db.query(BranchRackItem).delete(synchronize_session=False),
+        "branch_rack_sessions": db.query(BranchRackSession).delete(synchronize_session=False),
         "import_batches": db.query(ImportBatch).count(),
     }
     db.query(Order).delete(synchronize_session=False)  # cascade → OrderTest 자동 삭제

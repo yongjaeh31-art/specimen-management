@@ -1,0 +1,827 @@
+{% extends "base.html" %}
+{% block title %}지사별 검체 확인{% endblock %}
+{% block content %}
+
+<div class="row g-3">
+
+  <!-- ── 상단 패널 ────────────────────────────────────────────── -->
+  <div class="col-12">
+    <div class="page-panel">
+      <div class="panel-header mb-3">
+        <div class="panel-icon"><i class="bi bi-diagram-3"></i></div>
+        <h1>지사별 검체 확인</h1>
+      </div>
+
+      <!-- PC명 + 코드 선택 + 버튼 -->
+      <div class="d-flex flex-wrap gap-3 align-items-end">
+        <div>
+          <label class="form-label fw-semibold mb-1" style="font-size:.82rem">PC명</label>
+          <input type="text" id="pcName" class="form-control form-control-sm"
+                 placeholder="예: PC-1" style="width:120px">
+        </div>
+        <div class="flex-grow-1">
+          <label class="form-label fw-semibold mb-1" style="font-size:.82rem">
+            분류코드 선택
+            <span id="selectedCodesLabel" class="text-primary ms-1" style="font-size:.78rem;font-weight:400"></span>
+          </label>
+          <div id="codeButtons" class="d-flex flex-wrap gap-1">
+            <span class="text-secondary" style="font-size:.82rem">접수리스트 로딩 중…</span>
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-primary btn-sm px-3" id="prepareBtn">
+            <i class="bi bi-play-fill me-1"></i>준비 시작
+          </button>
+          <button id="brTtsToggleBtn" type="button" class="btn btn-sm btn-primary" onclick="brToggleTTS()">
+            <i class="bi bi-volume-up-fill"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 진행 현황 바 (준비 후 표시) -->
+      <div id="progressArea" class="mt-3 d-none">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          <div class="d-flex align-items-baseline gap-1">
+            <span class="text-secondary" style="font-size:.78rem">잔여</span>
+            <span id="statRemaining" class="fw-bold" style="font-size:1.4rem;color:var(--accent)">0</span>
+            <span class="text-secondary" style="font-size:.78rem">건 /</span>
+            <span id="statTotal" class="text-secondary" style="font-size:.9rem">0</span>
+            <span class="text-secondary" style="font-size:.78rem">건</span>
+          </div>
+          <div class="d-flex align-items-center gap-2 text-secondary" style="font-size:.78rem">
+            <span>완료 <strong id="statDone" class="text-success">0</strong>건</span>
+            <span>·</span>
+            <span><strong id="statRacks">0</strong>랙</span>
+          </div>
+          <div class="flex-grow-1" style="min-width:120px">
+            <div class="progress" style="height:8px;border-radius:4px">
+              <div id="progressBar" class="progress-bar bg-success" role="progressbar" style="width:0%"></div>
+            </div>
+            <div class="d-flex justify-content-between mt-1">
+              <span style="font-size:.7rem;color:var(--gray-400)">0%</span>
+              <span id="progressPct" style="font-size:.72rem;color:var(--gray-600);font-weight:600">0%</span>
+              <span style="font-size:.7rem;color:var(--gray-400)">100%</span>
+            </div>
+          </div>
+          <!-- 미확인 목록 토글 -->
+          <button class="btn btn-sm btn-outline-warning" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#unscannedCollapse"
+                  aria-expanded="false" aria-controls="unscannedCollapse">
+            <i class="bi bi-exclamation-circle me-1"></i>미확인
+            <span id="unscannedBadge" class="fw-bold">0</span>건
+            <i class="bi bi-chevron-down ms-1" style="font-size:.72rem"></i>
+          </button>
+        </div>
+
+        <!-- 미확인 목록 접이식 패널 -->
+        <div class="collapse mt-2" id="unscannedCollapse">
+          <div style="border:1.5px solid #fbbf24;border-radius:8px;background:#fffbeb;overflow:hidden">
+            <div class="d-flex align-items-center justify-content-between px-3 py-2"
+                 style="border-bottom:1px solid #fde68a">
+              <span id="unscannedCount" class="fw-semibold" style="font-size:.84rem;color:#92400e">
+                미확인 목록
+              </span>
+              <button class="btn btn-sm btn-outline-secondary" onclick="printUnscanned()" style="font-size:.78rem">
+                <i class="bi bi-printer me-1"></i>인쇄
+              </button>
+            </div>
+            <div class="table-responsive" style="max-height:400px;overflow-y:auto">
+              <table class="table table-sm table-hover mb-0" style="font-size:.82rem">
+                <thead class="sticky-top" style="background:#fef3c7">
+                  <tr>
+                    <th class="text-center" style="width:44px">순번</th>
+                    <th>접수번호</th>
+                    <th class="text-center">랙</th>
+                    <th class="text-center">자리</th>
+                    <th>환자명</th>
+                    <th>검체명</th>
+                    <th>병원명</th>
+                  </tr>
+                </thead>
+                <tbody id="unscannedTableBody">
+                  <tr><td colspan="6" class="text-center text-secondary py-3">준비 시작 후 표시됩니다</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 스캔 패널 (왼쪽) ─────────────────────────────────────── -->
+  <div class="col-12 col-xl-5">
+    <div class="page-panel d-flex flex-column gap-3">
+
+      <!-- TTS 설정 -->
+      <div class="d-flex gap-2 align-items-center">
+        <div class="flex-grow-1">
+          <select id="brTtsVoiceSel" class="form-select form-select-sm" style="display:none;font-size:.78rem"
+                  onchange="brOnVoiceChange(this)"></select>
+          <div id="brTtsVoiceNone" class="text-secondary" style="font-size:.74rem">음성 로딩 중…</div>
+        </div>
+        <select id="brTtsRateSel" class="form-select form-select-sm" style="width:90px;font-size:.78rem"
+                onchange="brOnRateChange(this)">
+          <option value="0.9">느리게</option>
+          <option value="1.1">보통</option>
+          <option value="1.3">빠름</option>
+          <option value="1.6">매우 빠름</option>
+        </select>
+      </div>
+
+      <!-- 스캔 입력 -->
+      <div>
+        <label class="form-label fw-semibold mb-2">바코드 스캔</label>
+        <input type="text" id="scanInput" class="form-control form-control-lg"
+               placeholder="바코드 스캔 또는 접수번호 입력" autocomplete="off"
+               style="font-size:1.2rem;letter-spacing:.04em">
+      </div>
+
+      <!-- 결과 영역 -->
+      <div id="scanResultArea" style="flex:1">
+        <div class="text-center text-secondary py-5" id="scanPlaceholder"
+             style="border-radius:12px;border:2px dashed var(--border);background:#fff;
+                    display:flex;flex-direction:column;align-items:center;justify-content:center;
+                    min-height:200px;padding:24px">
+          <i class="bi bi-upc-scan" style="font-size:2.8rem;opacity:.25"></i>
+          <div class="mt-2" style="font-size:.88rem">분류코드를 선택하고 준비 시작 후 스캔하세요</div>
+        </div>
+        <div id="scanResultCard" class="d-none"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── 랙 그리드 패널 (오른쪽) ──────────────────────────────── -->
+  <div class="col-12 col-xl-7">
+    <div class="page-panel h-100" style="min-height:300px">
+
+      <!-- 스캔 전 안내 -->
+      <div id="brRackEmpty"
+           style="height:100%;display:flex;flex-direction:column;align-items:center;
+                  justify-content:center;color:var(--gray-400);font-size:.8rem;text-align:center">
+        <i class="bi bi-grid-3x3-gap"
+           style="font-size:2rem;display:block;margin-bottom:8px;color:var(--gray-300)"></i>
+        준비 시작 후<br>랙 위치 표시
+      </div>
+
+      <!-- 랙 내용 (준비 후 표시) -->
+      <div id="brRackArea" style="display:none">
+
+        <div class="mb-2 d-flex align-items-baseline gap-2 flex-wrap">
+          <span class="fw-bold" id="brRackTitle" style="font-size:.82rem">-</span>
+          <span class="text-secondary" id="brRackSubtitle" style="font-size:.72rem"></span>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
+          <div id="brRackSelector" class="d-flex gap-1 flex-wrap"></div>
+        </div>
+
+        <!-- 범례 -->
+        <div class="d-flex gap-3 mb-2" style="font-size:.72rem;font-weight:600">
+          <span style="display:inline-flex;align-items:center;gap:4px;color:#64748b">
+            <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#e2e8f0;border:1px solid #cbd5e1"></span>미처리
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:4px;color:#16a34a">
+            <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#16a34a"></span>완료
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:4px;color:#ea580c">
+            <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#f97316"></span>방금
+          </span>
+        </div>
+
+        <div id="brRackGrid"></div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ═══════════════════════════════════════════════════════════
+// TTS — micro.html과 동일한 localStorage 키 공유
+// ═══════════════════════════════════════════════════════════
+let ttsEnabled       = localStorage.getItem("ttsEnabled") !== "false";
+let ttsRate          = parseFloat(localStorage.getItem("ttsRate") || "1.3");
+let ttsSelectedVoice = null;
+
+function numToKorean(n) {
+  const ones = ["","일","이","삼","사","오","육","칠","팔","구"];
+  if (n <= 0 || isNaN(n)) return String(n);
+  if (n < 10) return ones[n];
+  const t = Math.floor(n / 10), o = n % 10;
+  return ((t === 1) ? "십" : (ones[t] + "십")) + (o > 0 ? ones[o] : "");
+}
+
+function speak(text) {
+  if (!ttsEnabled || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang  = "ko-KR"; utt.rate = ttsRate; utt.pitch = 1.0;
+  if (ttsSelectedVoice) utt.voice = ttsSelectedVoice;
+  window.speechSynthesis.speak(utt);
+}
+
+function _brVoiceGenderLabel(name) {
+  if (/InJoon|GookMin|인준|국민/i.test(name)) return "남성";
+  if (/Heami|SunHi|JiMin|Yumi|해미|선히|지민|유미/i.test(name)) return "여성";
+  return null;
+}
+
+function _brLoadVoices() {
+  if (!window.speechSynthesis) return;
+  const voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith("ko"));
+  const sel  = document.getElementById("brTtsVoiceSel");
+  const none = document.getElementById("brTtsVoiceNone");
+  if (!sel || !voices.length) return;
+  const saved = localStorage.getItem("ttsVoice");
+  sel.innerHTML = voices.map(v => {
+    const short = v.name.replace(/Microsoft |Google /, "").replace(/ Desktop$/, "");
+    const g = _brVoiceGenderLabel(v.name);
+    return `<option value="${v.name}" ${v.name === saved ? "selected" : ""}>${short}${g ? ` (${g})` : ""}</option>`;
+  }).join("");
+  sel.style.display = "block";
+  if (none) none.style.display = "none";
+  ttsSelectedVoice = voices.find(v => v.name === saved) || voices[0];
+}
+window.speechSynthesis && window.speechSynthesis.addEventListener("voiceschanged", _brLoadVoices);
+
+function brOnVoiceChange(sel) {
+  const voices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith("ko"));
+  ttsSelectedVoice = voices.find(v => v.name === sel.value) || null;
+  localStorage.setItem("ttsVoice", sel.value);
+  speak("일번랙 사번");
+}
+function brOnRateChange(sel) {
+  ttsRate = parseFloat(sel.value);
+  localStorage.setItem("ttsRate", ttsRate);
+  speak("일번랙 사번");
+}
+function _brUpdateTTSBtn() {
+  const btn = document.getElementById("brTtsToggleBtn");
+  if (!btn) return;
+  btn.innerHTML = ttsEnabled ? '<i class="bi bi-volume-up-fill"></i>' : '<i class="bi bi-volume-mute-fill"></i>';
+  btn.title     = ttsEnabled ? "음성 끄기" : "음성 켜기";
+  btn.className = `btn btn-sm ${ttsEnabled ? "btn-primary" : "btn-outline-secondary"}`;
+  const r = document.getElementById("brTtsRateSel");
+  if (r) r.value = ttsRate;
+}
+function brToggleTTS() {
+  ttsEnabled = !ttsEnabled;
+  localStorage.setItem("ttsEnabled", ttsEnabled);
+  _brUpdateTTSBtn();
+}
+
+// TTS: 접수번호 없이 랙 위치만 읽기
+function speakPosition(rackNo, position, alreadyScanned) {
+  speak((alreadyScanned ? "재스캔. " : "") +
+        `${numToKorean(rackNo)}번랙 ${numToKorean(position)}번`);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 상태
+// ═══════════════════════════════════════════════════════════
+let selectedCodes   = [];
+let sessionData     = null;
+let pollTimer       = null;
+let currentBrRackNo = 1;
+let lastBrHighlight = null;   // {rackNo, pos, time}
+
+const HIGHLIGHT_MS  = 3500;
+
+// ═══════════════════════════════════════════════════════════
+// DOM
+// ═══════════════════════════════════════════════════════════
+const pcNameEl           = document.getElementById("pcName");
+const codeButtonsEl      = document.getElementById("codeButtons");
+const prepareBtn         = document.getElementById("prepareBtn");
+const scanInput          = document.getElementById("scanInput");
+const scanResultCard     = document.getElementById("scanResultCard");
+const scanPlaceholder    = document.getElementById("scanPlaceholder");
+const progressArea       = document.getElementById("progressArea");
+const selectedCodesLabel = document.getElementById("selectedCodesLabel");
+
+// ═══════════════════════════════════════════════════════════
+// 초기화
+// ═══════════════════════════════════════════════════════════
+(async function init() {
+  const savedPc    = localStorage.getItem("pcName") || "";
+  const savedCodes = JSON.parse(localStorage.getItem("branchSelectedCodes") || "[]");
+  pcNameEl.value   = savedPc;
+  pcNameEl.addEventListener("input", () => localStorage.setItem("pcName", pcNameEl.value.trim()));
+  _brUpdateTTSBtn();
+  _brLoadVoices();
+  await loadCodes(savedCodes);
+  if (savedPc) await loadExistingSession(savedPc);
+  document.addEventListener("click", e => {
+    if (!e.target.closest("button, input, a, .collapse")) scanInput.focus();
+  });
+})();
+
+// ═══════════════════════════════════════════════════════════
+// 분류코드 로드 & 렌더
+// ═══════════════════════════════════════════════════════════
+async function loadCodes(savedCodes = []) {
+  try {
+    const res  = await fetch("/api/branch-rack/codes");
+    const data = await res.json();
+    renderCodeButtons(data.codes || [], savedCodes);
+  } catch {
+    codeButtonsEl.innerHTML = '<span class="text-danger" style="font-size:.82rem">코드 로드 실패</span>';
+  }
+}
+
+function renderCodeButtons(codes, savedCodes = []) {
+  if (!codes.length) {
+    codeButtonsEl.innerHTML = '<span class="text-secondary" style="font-size:.82rem">접수리스트를 먼저 업로드하세요</span>';
+    return;
+  }
+  selectedCodes = savedCodes.filter(c => codes.includes(c));
+  codeButtonsEl.innerHTML = codes.map(code => `
+    <button type="button"
+            class="btn btn-sm br-code-btn ${selectedCodes.includes(code) ? "btn-primary" : "btn-outline-secondary"}"
+            data-code="${escapeHtml(code)}" onclick="toggleCode('${escapeHtml(code)}')">
+      ${escapeHtml(code)}
+    </button>`).join("");
+  updateSelectedCodesLabel();
+}
+
+function toggleCode(code) {
+  const idx = selectedCodes.indexOf(code);
+  idx >= 0 ? selectedCodes.splice(idx, 1) : selectedCodes.push(code);
+  localStorage.setItem("branchSelectedCodes", JSON.stringify(selectedCodes));
+  document.querySelectorAll(".br-code-btn").forEach(btn => {
+    const c = btn.dataset.code;
+    btn.classList.toggle("btn-primary", selectedCodes.includes(c));
+    btn.classList.toggle("btn-outline-secondary", !selectedCodes.includes(c));
+  });
+  updateSelectedCodesLabel();
+}
+
+function updateSelectedCodesLabel() {
+  selectedCodesLabel.textContent = selectedCodes.length
+    ? `(선택: ${[...selectedCodes].sort().join(", ")})`
+    : "";
+}
+
+// ═══════════════════════════════════════════════════════════
+// 기존 세션 복원
+// ═══════════════════════════════════════════════════════════
+async function loadExistingSession(pcName) {
+  if (!pcName) return;
+  try {
+    const res  = await fetch(`/api/branch-rack/session?workstation_name=${encodeURIComponent(pcName)}`);
+    const data = await res.json();
+    if (data && data.items) {
+      sessionData = data;
+      if (data.branch_codes?.length) {
+        selectedCodes = [...data.branch_codes];
+        localStorage.setItem("branchSelectedCodes", JSON.stringify(selectedCodes));
+        document.querySelectorAll(".br-code-btn").forEach(btn => {
+          const c = btn.dataset.code;
+          btn.classList.toggle("btn-primary", selectedCodes.includes(c));
+          btn.classList.toggle("btn-outline-secondary", !selectedCodes.includes(c));
+        });
+        updateSelectedCodesLabel();
+      }
+      updateStats();
+      renderBranchRackGrid(1, null);
+      startPolling();
+      showScanPlaceholderReady();
+      scanInput.focus();
+    }
+  } catch { /* ignore */ }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 준비 시작
+// ═══════════════════════════════════════════════════════════
+prepareBtn.addEventListener("click", async () => {
+  const pcName = pcNameEl.value.trim();
+  if (!pcName)               { showToast("PC명 필요",  "PC명을 입력하세요.",              "warning"); return; }
+  if (!selectedCodes.length) { showToast("코드 필요",  "분류코드를 하나 이상 선택하세요.", "warning"); return; }
+  localStorage.setItem("pcName", pcName);
+
+  prepareBtn.disabled  = true;
+  prepareBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>준비 중…';
+
+  try {
+    const res  = await fetch("/api/branch-rack/prepare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workstation_name: pcName, branch_codes: selectedCodes, rack_size: 50 }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "준비 실패");
+
+    const toastMsg = (data.is_new === false)
+      ? `신규 ${data.added}건 추가 · 총 ${data.total_items}건 · ${data.total_racks}랙`
+      : `${data.total_items}건 준비됨 · ${data.total_racks}랙`;
+    showToast("준비 완료", toastMsg, "success");
+
+    currentBrRackNo = 1;
+    lastBrHighlight  = null;
+    await refreshSession();
+    startPolling();
+    showScanPlaceholderReady();
+    scanInput.focus();
+  } catch (err) {
+    showToast("오류", err.message, "danger");
+  } finally {
+    prepareBtn.disabled  = false;
+    prepareBtn.innerHTML = '<i class="bi bi-play-fill me-1"></i>준비 시작';
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 세션 새로고침 (폴링)
+// ═══════════════════════════════════════════════════════════
+async function refreshSession() {
+  const pcName = pcNameEl.value.trim();
+  if (!pcName) return;
+  try {
+    const res  = await fetch(`/api/branch-rack/session?workstation_name=${encodeURIComponent(pcName)}`);
+    const data = await res.json();
+    if (data && data.items) {
+      sessionData = data;
+      updateStats();
+      const elapsed      = lastBrHighlight ? Date.now() - lastBrHighlight.time : Infinity;
+      const highlightPos = elapsed < HIGHLIGHT_MS ? lastBrHighlight.pos : null;
+      if (elapsed >= HIGHLIGHT_MS) lastBrHighlight = null;
+      renderBranchRackGrid(currentBrRackNo, highlightPos);
+      updateUnscannedList();
+    }
+  } catch { /* ignore */ }
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(refreshSession, 3000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 통계 표시
+// ═══════════════════════════════════════════════════════════
+function updateStats() {
+  if (!sessionData) return;
+  const { total_items, total_racks, scanned_count } = sessionData;
+  const remaining = total_items - scanned_count;
+  const pct       = total_items ? Math.round(scanned_count / total_items * 100) : 0;
+  document.getElementById("statRemaining").textContent  = remaining;
+  document.getElementById("statTotal").textContent      = total_items;
+  document.getElementById("statDone").textContent       = scanned_count;
+  document.getElementById("statRacks").textContent      = total_racks;
+  document.getElementById("progressBar").style.width    = pct + "%";
+  document.getElementById("progressPct").textContent    = pct + "%";
+  document.getElementById("unscannedBadge").textContent = remaining;
+  progressArea.classList.remove("d-none");
+}
+
+// ═══════════════════════════════════════════════════════════
+// 미확인 목록 갱신 (접이식 패널)
+// ═══════════════════════════════════════════════════════════
+function updateUnscannedList() {
+  if (!sessionData || !sessionData.items) return;
+  const items = sessionData.items.filter(i => !i.scanned);
+
+  document.getElementById("unscannedCount").textContent =
+    `미확인 ${items.length}건 / 전체 ${sessionData.total_items}건`;
+
+  const tbody = document.getElementById("unscannedTableBody");
+  if (!tbody) return;
+
+  if (!items.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="text-center text-success py-3">
+          <i class="bi bi-check-circle-fill me-1"></i>모든 검체가 확인되었습니다.
+        </td>
+      </tr>`;
+  } else {
+    tbody.innerHTML = items.map(item => `
+      <tr>
+        <td class="text-center">${item.sort_no}</td>
+        <td style="font-family:monospace;font-weight:600">${escapeHtml(item.accession_no)}</td>
+        <td class="text-center">${item.rack_no}번 랙</td>
+        <td class="text-center">${item.rack_position}번째</td>
+        <td>${escapeHtml(item.patient_name || "—")}</td>
+        <td>${escapeHtml(item.specimen_name || "—")}</td>
+        <td>${escapeHtml(item.hospital_name || "—")}</td>
+      </tr>`).join("");
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 스캔 처리
+// ═══════════════════════════════════════════════════════════
+scanInput.addEventListener("keydown", async e => {
+  if (e.key !== "Enter") return;
+  const val = scanInput.value.trim();
+  if (!val) return;
+  scanInput.value = "";
+
+  const pcName = pcNameEl.value.trim();
+  if (!pcName)      { showToast("PC명 필요",  "PC명을 입력하세요.",         "warning"); return; }
+  if (!sessionData) { showToast("준비 필요",  "먼저 준비 시작을 눌러주세요.", "warning"); return; }
+
+  const user = JSON.parse(localStorage.getItem("currentUser") || "null");
+  try {
+    const res  = await fetch("/api/branch-rack/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accession_no:     val,
+        workstation_name: pcName,
+        operator_name:    user?.display_name || null,
+      }),
+    });
+    const data = await res.json();
+    renderScanResult(data);
+
+    if (data.status === "OK") {
+      const item = sessionData.items.find(i => i.accession_no === data.accession_no);
+      if (item && !item.scanned) {
+        item.scanned = true;
+        sessionData.scanned_count = (sessionData.scanned_count || 0) + 1;
+        updateStats();
+        updateUnscannedList();
+      }
+      highlightRackCell(data.rack_no, data.rack_position);
+    }
+  } catch (err) {
+    showToast("오류", err.message, "danger");
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 스캔 결과 렌더링 (micro.html 스타일)
+// ═══════════════════════════════════════════════════════════
+function renderScanResult(data) {
+  scanPlaceholder.classList.add("d-none");
+  scanResultCard.classList.remove("d-none");
+
+  if (data.status === "OK") {
+    const isDup       = data.already_scanned;
+    const accent      = isDup ? "#f59e0b" : "#22c55e";
+    const bg          = isDup ? "#fefce8" : "#f0fdf4";
+    const tc          = isDup ? "#78350f" : "#14532d";
+    const patientTxt  = [data.patient_name || "", data.patient_age ? `${data.patient_age}세` : ""]
+      .filter(Boolean).join(" / ");
+
+    scanResultCard.innerHTML = `
+      <div style="border-radius:12px;border:2.5px solid ${accent};background:${bg};padding:22px">
+
+        <div class="d-flex align-items-center justify-content-between mb-3 pb-2"
+             style="border-bottom:1.5px solid ${accent}40">
+          <div style="font-size:1.1rem;font-weight:800;color:${tc}">
+            <i class="bi ${isDup ? "bi-clock-history" : "bi-check-circle-fill"} me-2"></i>
+            지사 ${escapeHtml(data.branch_code)}
+          </div>
+          <span class="badge ${isDup ? "text-bg-warning" : "text-bg-success"}">
+            ${isDup ? "재스캔" : "처리 완료"}
+          </span>
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:stretch;margin-bottom:12px">
+          <div style="flex:1;text-align:center;background:rgba(0,0,0,.06);border-radius:12px;padding:16px 10px">
+            <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#94a3b8;margin-bottom:4px">랙 번호</div>
+            <div style="font-size:4.5rem;font-weight:900;line-height:1;color:${accent}">${data.rack_no}</div>
+          </div>
+          <div style="flex:2;text-align:center;background:${accent};border-radius:12px;padding:16px 10px;box-shadow:0 4px 16px ${accent}60">
+            <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:rgba(255,255,255,.8);margin-bottom:4px">칸 번호</div>
+            <div style="font-size:4.5rem;font-weight:900;line-height:1;color:#fff">${data.rack_position}</div>
+          </div>
+        </div>
+
+        <div style="text-align:center;font-size:1.05rem;font-weight:800;color:${tc};
+                    background:rgba(255,255,255,.65);border-radius:8px;padding:10px 14px;margin-bottom:12px">
+          ${isDup
+            ? "이미 처리된 검체입니다"
+            : `<span style="font-size:1.3rem">${data.rack_no}번 랙</span> &nbsp;·&nbsp; <span style="font-size:1.5rem;color:${accent}">${data.rack_position}번 칸</span>에 꽂으세요`}
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <div style="grid-column:1/-1;background:#fff;border-radius:8px;padding:10px 14px;border-left:4px solid ${accent}">
+            <div style="font-size:.68rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">접수번호</div>
+            <div style="font-weight:900;font-family:monospace;font-size:1.6rem;color:#0f172a;letter-spacing:.04em;line-height:1">${escapeHtml(data.accession_no)}</div>
+          </div>
+          <div style="background:#fff;border-radius:8px;padding:9px 12px">
+            <div style="font-size:.68rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">환자 / 나이</div>
+            <div style="font-weight:800;font-size:1rem;color:#0f172a">${escapeHtml(patientTxt || "—")}</div>
+          </div>
+          <div style="background:#fff;border-radius:8px;padding:9px 12px">
+            <div style="font-size:.68rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">검체명</div>
+            <div style="font-weight:800;font-size:1rem;color:#0f172a">${escapeHtml(data.specimen_name || "—")}</div>
+          </div>
+          <div style="grid-column:1/-1;background:#fff;border-radius:8px;padding:9px 12px">
+            <div style="font-size:.68rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">검사명</div>
+            <div style="font-weight:700;font-size:.95rem;color:#1e293b;word-break:keep-all">${escapeHtml((data.test_names || []).join(", ") || "—")}</div>
+          </div>
+        </div>
+
+      </div>`;
+
+    speakPosition(data.rack_no, data.rack_position, data.already_scanned);
+
+  } else if (data.status === "WRONG_CODE") {
+    scanResultCard.innerHTML = `
+      <div class="card border-warning border-2">
+        <div class="card-header bg-warning text-dark py-2 fw-semibold">
+          <i class="bi bi-exclamation-triangle-fill me-2"></i>분류코드 불일치
+        </div>
+        <div class="card-body p-3">
+          <div class="fw-semibold mb-1" style="font-family:monospace">${escapeHtml(data.accession_no)}</div>
+          <div class="mb-1">${escapeHtml(data.message)}</div>
+          ${data.hospital_name ? `<div class="text-secondary" style="font-size:.85rem">${escapeHtml(data.hospital_name)}</div>` : ""}
+        </div>
+      </div>`;
+    speak("대상 아닙니다");
+
+  } else if (data.status === "NOT_FOUND") {
+    scanResultCard.innerHTML = `
+      <div class="card border-danger border-2">
+        <div class="card-header bg-danger text-white py-2 fw-semibold">
+          <i class="bi bi-x-circle-fill me-2"></i>미등록 검체
+        </div>
+        <div class="card-body p-3">
+          <div class="fw-semibold mb-1" style="font-family:monospace">${escapeHtml(data.accession_no)}</div>
+          <div>${escapeHtml(data.message)}</div>
+        </div>
+      </div>`;
+    speak("미등록 검체");
+
+  } else {
+    scanResultCard.innerHTML = `
+      <div class="card border-secondary border-2">
+        <div class="card-body p-3 text-danger">
+          <div class="fw-semibold">${escapeHtml(data.accession_no || "")}</div>
+          <div>${escapeHtml(data.message || "알 수 없는 오류")}</div>
+        </div>
+      </div>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 랙 그리드 렌더링
+// ═══════════════════════════════════════════════════════════
+function renderBranchRackGrid(rackNo, highlightPos) {
+  const gridEl  = document.getElementById("brRackGrid");
+  const areaEl  = document.getElementById("brRackArea");
+  const emptyEl = document.getElementById("brRackEmpty");
+
+  if (!sessionData || !sessionData.items || !sessionData.items.length) {
+    if (areaEl)  areaEl.style.display  = "none";
+    if (emptyEl) emptyEl.style.display = "";
+    return;
+  }
+
+  if (areaEl)  areaEl.style.display  = "";
+  if (emptyEl) emptyEl.style.display = "none";
+
+  const rackSize   = sessionData.rack_size || 50;
+  const totalRacks = sessionData.total_racks || 1;
+
+  document.getElementById("brRackTitle").textContent    = (sessionData.branch_codes || []).join(", ");
+  document.getElementById("brRackSubtitle").textContent =
+    `${sessionData.scanned_count || 0}/${sessionData.total_items} 처리됨`;
+
+  renderBrRackSelector(totalRacks, rackNo);
+
+  const rackItems = sessionData.items.filter(i => i.rack_no === rackNo);
+  const byPos     = {};
+  rackItems.forEach(item => { byPos[item.rack_position] = item; });
+
+  const GAP    = 3;
+  const panel  = gridEl.closest(".page-panel") || gridEl.parentElement;
+  const availW = (panel?.clientWidth || 500) - 48;
+  const CELL   = Math.max(22, Math.min(42, Math.floor((availW - 9 * GAP) / 10)));
+
+  gridEl.setAttribute("style",
+    `display:grid;grid-template-columns:repeat(10,${CELL}px);` +
+    `grid-auto-rows:${CELL}px;gap:${GAP}px;align-items:start;`
+  );
+
+  const fsize = CELL <= 24 ? 8 : CELL <= 30 ? 10 : CELL <= 36 ? 11 : 13;
+  const BASE  =
+    `width:${CELL}px;height:${CELL}px;box-sizing:border-box;` +
+    `border-radius:${CELL <= 28 ? 3 : 5}px;display:flex;align-items:center;justify-content:center;` +
+    `font-size:${fsize}px;font-weight:800;line-height:1;` +
+    `cursor:default;user-select:none;overflow:hidden;flex-shrink:0;`;
+
+  let html = "";
+  for (let i = 1; i <= rackSize; i++) {
+    const item     = byPos[i];
+    const isEmpty  = !item;
+    const isDone   = item && item.scanned;
+    const isActive = !isEmpty && (i === highlightPos);
+
+    const bg  = isEmpty  ? "#f1f5f9" : isActive ? "#f97316" : isDone ? "#16a34a" : "#e2e8f0";
+    const clr = isEmpty  ? "#cbd5e1" : isActive ? "#fff"    : isDone ? "#fff"    : "#64748b";
+    const bd  = isEmpty  ? "1px solid #e2e8f0" : isActive ? "2px solid #ea580c" : isDone ? "none" : "1px solid #cbd5e1";
+    const anim = isActive ? "animation:rack-blink .5s ease-in-out infinite;transform:scale(1.08);box-shadow:0 0 8px #f9731680;" : "";
+
+    html += `<div data-pos="${i}" style="${BASE}background:${bg};color:${clr};border:${bd};${anim}">${isEmpty ? "" : i}</div>`;
+  }
+  gridEl.innerHTML = html;
+}
+
+function renderBrRackSelector(totalRacks, activeRack) {
+  const el = document.getElementById("brRackSelector");
+  if (!el) return;
+  el.innerHTML = Array.from({length: totalRacks}, (_, i) => i + 1).map(n => `
+    <button class="btn btn-sm ${n === activeRack ? "btn-primary" : "btn-outline-secondary"}"
+            onclick="switchBrRack(${n})" type="button"
+            style="min-width:44px;padding-left:4px;padding-right:4px;text-align:center">${n}번</button>`
+  ).join("");
+}
+
+function switchBrRack(n) {
+  currentBrRackNo = n;
+  const elapsed      = lastBrHighlight ? Date.now() - lastBrHighlight.time : Infinity;
+  const highlightPos = (elapsed < HIGHLIGHT_MS && lastBrHighlight?.rackNo === n)
+    ? lastBrHighlight.pos : null;
+  renderBranchRackGrid(n, highlightPos);
+}
+
+function highlightRackCell(rackNo, position) {
+  currentBrRackNo = rackNo;
+  lastBrHighlight  = { rackNo, pos: position, time: Date.now() };
+  renderBranchRackGrid(rackNo, position);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 미확인 검체 인쇄 (새 창)
+// ═══════════════════════════════════════════════════════════
+function printUnscanned() {
+  if (!sessionData || !sessionData.items) return;
+  const items   = sessionData.items.filter(i => !i.scanned);
+  const pcName  = pcNameEl.value.trim();
+  const codes   = (sessionData.branch_codes || []).join(", ");
+  const dateStr = new Date().toLocaleString("ko-KR");
+
+  const rows = items.map(item => `
+    <tr>
+      <td>${item.sort_no}</td>
+      <td>${item.accession_no}</td>
+      <td>${item.rack_no}번 랙</td>
+      <td>${item.rack_position}번째</td>
+      <td>${item.patient_name || ""}</td>
+      <td>${item.specimen_name || ""}</td>
+      <td>${item.hospital_name || ""}</td>
+    </tr>`).join("");
+
+  const html = `<!DOCTYPE html><html lang="ko"><head>
+    <meta charset="utf-8"><title>미확인 검체 목록</title>
+    <style>
+      body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:12px;margin:20px}
+      h2{font-size:15px;margin-bottom:6px}
+      .meta{font-size:11px;color:#666;margin-bottom:12px}
+      table{border-collapse:collapse;width:100%}
+      th,td{border:1px solid #aaa;padding:4px 8px}
+      th{background:#f0f0f0;font-weight:bold;text-align:center}
+      td:nth-child(1),td:nth-child(3),td:nth-child(4){text-align:center}
+    </style></head><body>
+    <h2>미확인 검체 목록</h2>
+    <div class="meta">분류코드: ${codes} | PC: ${pcName} | 출력: ${dateStr} | 미확인 ${items.length}건 / 전체 ${sessionData.total_items}건</div>
+    <table>
+      <tr><th>순번</th><th>접수번호</th><th>랙</th><th>자리</th><th>환자명</th><th>검체명</th><th>병원명</th></tr>
+      ${rows}
+    </table></body></html>`;
+
+  const w = window.open("", "_blank", "width=800,height=600");
+  if (!w) { showToast("팝업 차단", "팝업 허용 후 다시 시도하세요.", "warning"); return; }
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 400);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 플레이스홀더 전환
+// ═══════════════════════════════════════════════════════════
+function showScanPlaceholderReady() {
+  scanPlaceholder.innerHTML =
+    '<i class="bi bi-upc-scan" style="font-size:2.8rem;opacity:.25"></i>' +
+    '<div class="mt-2" style="font-size:.88rem">바코드를 스캔하세요</div>';
+  scanPlaceholder.classList.remove("d-none");
+  scanResultCard.classList.add("d-none");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  _brUpdateTTSBtn();
+  _brLoadVoices();
+});
+</script>
+
+<style>
+.br-code-btn { font-size:.78rem;padding:2px 10px;border-radius:4px;font-weight:600;letter-spacing:.02em }
+
+@keyframes rack-blink {
+  0%,100% { opacity:1 }
+  50%      { opacity:.6 }
+}
+</style>
+{% endblock %}

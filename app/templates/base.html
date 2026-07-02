@@ -69,6 +69,11 @@
       </a>
     </li>
     <li class="nav-item">
+      <a class="nav-link {% if request.url.path == '/branch-rack' %}active{% endif %}" href="/branch-rack">
+        <i class="bi bi-diagram-3"></i>지사별 검체 확인
+      </a>
+    </li>
+    <li class="nav-item">
       <a class="nav-link {% if request.url.path == '/dashboard' %}active{% endif %}" href="/dashboard">
         <i class="bi bi-speedometer2"></i>대시보드
       </a>

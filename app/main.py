@@ -8,7 +8,7 @@ from sqlalchemy import inspect, text
 
 from app.database import Base, SessionLocal, engine
 from app.models import OrderTest
-from app.routers import auth, imports, micro, reports, scans
+from app.routers import auth, branch_rack, imports, micro, reports, scans
 from app.schemas import DEPARTMENT_SUBCATEGORIES, MICRO_CULTURE_TYPES, SPECIMEN_CATEGORIES
 from app.services.auth_service import _hash_password
 from app.services.routing_service import seed_rules
@@ -56,6 +56,7 @@ app.include_router(scans.router)
 app.include_router(micro.router)
 app.include_router(reports.router)
 app.include_router(auth.router)
+app.include_router(branch_rack.router)
 
 
 def _migrate_test_names(db) -> None:
@@ -171,6 +172,11 @@ def find_page(request: Request):
 @app.get("/unregistered", response_class=HTMLResponse)
 def unregistered_page(request: Request):
     return templates.TemplateResponse("unregistered.html", {"request": request})
+
+
+@app.get("/branch-rack", response_class=HTMLResponse)
+def branch_rack_page(request: Request):
+    return templates.TemplateResponse("branch_rack.html", {"request": request})
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
